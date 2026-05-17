@@ -1,5 +1,5 @@
-@baseUrl = http://127.0.0.1:5000
-@token = eyJ1c2VyX2lkIjoxLCJ0b2tlbl92ZXJzaW9uIjowfQ.agnX0A.sqB8E3wxagd8fZzlGVJxDJIdOI4
+@baseUrl = http://127.0.0.1:8000
+@token = eyJ1c2VyX2lkIjoxLCJ0b2tlbl92ZXJzaW9uIjowfQ.agn_Ig.egKsFDpyUktVvb_8WDv_ZRM9m7c
 
 GET {{baseUrl}}/api/health
 
@@ -17,7 +17,6 @@ Content-Type: application/json
 ###
 
 POST {{baseUrl}}/api/auth/login
-
 Content-Type: application/json
 
 {
@@ -39,4 +38,16 @@ Authorization: Bearer {{token}}
 {
     "name": "sample",
     "description": "example row"
+}
+
+###
+
+POST {{baseUrl}}/api/addParticipant
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+    "name": "Sam",
+    "last_name": "Vandenabeele",
+    "phone_1": "+32465094556"
 }

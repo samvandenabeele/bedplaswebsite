@@ -26,13 +26,13 @@ class User(db.Model):
             "email": self.email,
             "created_at": self.created_at.isoformat(),
         }
+    
 
-
-class ExampleModel(db.Model):
+class Participant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.String(200), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-
-    def __repr__(self):
-        return f"<ExampleModel {self.name}>"
+    name = db.Column(db.String, unique=False, nullable=False, index=True)
+    last_name = db.Column(db.String, unique=False, nullable=False, index=True)
+    phone_1 = db.Column(db.String, unique=False, nullable=False, index=True)
+    phone_2 = db.Column(db.String, unique=False, nullable=True)
+    date_added = db.Column(db.DateTime, unique=False, default=lambda: datetime.now(timezone.utc))
+    active = db.Column(db.Boolean, default=True)

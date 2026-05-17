@@ -5,7 +5,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import or_
 
 from extensions import db
-from models import ExampleModel, User
+from models import ExampleModel, User, Participant
 
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -137,3 +137,83 @@ def example():
             ]
         }
     )
+
+@api_bp.route("/addParticipant", methods=["POST"])
+@require_auth
+def add_participants():
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({"error": "incorrect participant info"}), 400
+
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        return jsonify({"error": "name is required."}), 400
+    
+    last_name = str(payload.get("last_name", "")).strip()
+    if not last_name:
+        return jsonify({"error": "last name is required."}), 400
+    
+    phone_1 = str(payload.get("phone_1", "")).strip()
+    if not phone_1:
+        return jsonify({"error": "phone_1 is required."}), 400
+    
+    phone_2 = str(payload.get("phone_2", "")).strip()
+
+    new_participant = Participant(name=name, last_name=last_name, phone_1=phone_1, phone_2=phone_2)
+    db.session.add(new_participant)
+    db.session.commit()
+    
+
+    return jsonify({"message": "Participant added successfully.", "name": name}), 201
+
+@api_bp.route("/delParticipant", methods=["POST"])
+@require_auth
+def del_participant():
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get("name", "")).strip()
+    last_name = str(payload.get("last_name", "")).strip()
+
+    if not name or not last_name:
+        return jsonify({"error": "name and last_name are required."}), 400
+
+    participant = Participant.query.filter(
+        Participant.name == name,
+        Participant.last_name == last_name,
+    ).first()
+
+    if participant is None:
+        return jsonify({"error": "Participant not found."}), 404
+
+    db.session.delete(participant)
+    db.session.commit()
+
+    return jsonify({"message": "Participant deleted successfully."})
+
+@api_bp.route("/queryParticipant", methods=["POST"])
+@require_auth
+def query_participant():
+    payload = request.get_json(silent=True) or {}
+    query = Participant.query.filter(Participant.active.is_(True))
+
+
+    if payload.get("name"):
+        query = query.filter(Participant.name.ilike(f"%{payload.get('name')}%"))
+    
+    if payload.get("last_name"):
+        query = query.filter(Participant.last_name.ilike(f"%{payload.get('last_name')}%"))
+    
+    if payload.get("phone_1"):
+        query = query.filter(Participant.phone_1.ilike(f"%{payload.get('phone_1')}%"))
+    
+    if payload.get("phone_2"):
+        query = query.filter(Participant.phone_2.ilike(f"%{payload.get('phone_2')}%"))
+    
+    participants = query.all()
+    
+    return jsonify({
+        "participants": [
+            {"id": p.id, "name": p.name, "last_name": p.last_name, "phone_1": p.phone_1, "phone_2": p.phone_2}
+            for p in participants
+        ]
+    })
+    
