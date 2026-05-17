@@ -131,7 +131,9 @@ def add_participants():
     
     phone_2 = str(payload.get("phone_2", "")).strip()
 
-    new_participant = Participant(name=name, last_name=last_name, phone_1=phone_1, phone_2=phone_2)
+    diaper = payload.get("empty_diaper", 0)
+
+    new_participant = Participant(name=name, last_name=last_name, phone_1=phone_1, phone_2=phone_2, empty_diaper=diaper)
     db.session.add(new_participant)
     db.session.commit()
     

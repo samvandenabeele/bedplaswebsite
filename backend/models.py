@@ -12,7 +12,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     token_version = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    empty_diaper = db.Column(db.Integer, nullable=True)
+    empty_diaper = db.Column(db.Integer, nullable=False, default=0)
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
