@@ -5,7 +5,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import or_
 
 from extensions import db
-from models import ExampleModel, User, Participant
+from models import User, Participant, Water, Urine, Diaper
 
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -110,34 +110,6 @@ def logout():
 def me():
     return jsonify({"user": g.current_user.to_dict()})
 
-
-@api_bp.route("/example", methods=["GET", "POST"])
-@require_auth
-def example():
-    if request.method == "POST":
-        payload = request.get_json(silent=True) or {}
-        name = str(payload.get("name", "")).strip()
-        description = str(payload.get("description", "")).strip() or None
-
-        if not name:
-            return jsonify({"error": "name is required."}), 400
-
-        record = ExampleModel(name=name, description=description)
-        db.session.add(record)
-        db.session.commit()
-
-        return jsonify({"example": {"id": record.id, "name": record.name, "description": record.description}}), 201
-
-    records = ExampleModel.query.order_by(ExampleModel.id.desc()).all()
-    return jsonify(
-        {
-            "examples": [
-                {"id": item.id, "name": item.name, "description": item.description}
-                for item in records
-            ]
-        }
-    )
-
 @api_bp.route("/addParticipant", methods=["POST"])
 @require_auth
 def add_participants():
@@ -174,7 +146,7 @@ def del_participant():
     last_name = str(payload.get("last_name", "")).strip()
 
     if not name or not last_name:
-        return jsonify({"error": "name and last_name are required."}), 400
+        return jsonify({"error": "name and last name are required."}), 400
 
     participant = Participant.query.filter(
         Participant.name == name,
@@ -216,4 +188,30 @@ def query_participant():
             for p in participants
         ]
     })
+
+@api_bp.route("/addWater", methods=["POST"])
+@require_auth
+def add_water():
+    payload = request.get_json()
+
+    name = payload.get("name")
+    last_name = payload.get("last_name")
+    meal = bool(payload.get("meal"))
+
+    if (not name) or (not last_name):
+        return jsonify({"error": "name and last name are required."}), 400
+
+    participant = Participant.query.filter(
+        Participant.name == name,
+        Participant.last_name == last_name
+    ).first()
+
+    if participant is None:
+        return jsonify({"error": "Participant not found."}), 404
+
+    participant_id = participant.id
+    
+    new_water = Water(participant_id=participant_id, meal=meal)
+    db.session.add(new_water)
+    db.session.commit()
     
