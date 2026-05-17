@@ -240,3 +240,31 @@ def add_urine():
     new_urine = Urine(participant_id=participant_id, amount=amount, note=note)
     db.session.add(new_urine)
     db.session.commit()
+
+@api_bp.route("/addDiaper", methods=["POST"])
+@require_auth
+def add_diaper():
+    payload = request.get_json()
+    name = payload.get("name")
+    last_name = payload.get("last_name")
+    weight = int(payload.get("weight"))
+    note = str(payload.get("note", "")).strip() or None
+
+    if (not name) or (not last_name):
+        return jsonify({"error": "name and last name are required."}), 400
+    
+    participant = Participant.query.filter(
+        Participant.name == name,
+        Participant.last_name == last_name
+    ).first()
+
+    if participant is None:
+        return jsonify({"error": "Participant not found."}), 404
+    
+    participant_id = participant.id
+
+    liquid_weight = weight - participant.empty_diaper
+
+    new_diaper = Diaper(participant_id=participant_id, weight=liquid_weight, note=note)
+    db.session.add(new_diaper)
+    db.session.commit()
