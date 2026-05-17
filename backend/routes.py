@@ -215,3 +215,28 @@ def add_water():
     db.session.add(new_water)
     db.session.commit()
     
+@api_bp.route("/addUrine", methods=["POST"])
+@require_auth
+def add_urine():
+    payload = request.get_json()
+    name = payload.get("name")
+    last_name = payload.get("last_name")
+    amount = int(payload.get("amount"))
+    note = str(payload.get("note", "")).strip() or None
+
+    if (not name) or (not last_name):
+        return jsonify({"error": "name and last name are required."}), 400
+    
+    participant = Participant.query.filter(
+        Participant.name == name,
+        Participant.last_name == last_name
+    ).first()
+
+    if participant is None:
+        return jsonify({"error": "Participant not found."}), 404
+    
+    participant_id = participant.id
+
+    new_urine = Urine(participant_id=participant_id, amount=amount, note=note)
+    db.session.add(new_urine)
+    db.session.commit()
