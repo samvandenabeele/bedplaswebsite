@@ -2,7 +2,7 @@ from functools import wraps
 
 from flask import Blueprint, current_app, g, jsonify, request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import or_
+from sqlalchemy import Date, func, or_
 
 from extensions import db
 from models import User, Participant, Water, Urine, Diaper
@@ -183,90 +183,109 @@ def query_participant():
         query = query.filter(Participant.phone_2.ilike(f"%{payload.get('phone_2')}%"))
     
     participants = query.all()
+    today = func.current_date()
     
     return jsonify({
         "participants": [
-            {"id": p.id, "name": p.name, "last_name": p.last_name, "phone_1": p.phone_1, "phone_2": p.phone_2}
+            {
+                "id": p.id,
+                "name": p.name,
+                "last_name": p.last_name,
+                "phone_1": p.phone_1,
+                "phone_2": p.phone_2,
+                "drank_today": db.session.query(func.count(Water.id))
+                .filter(
+                    Water.participant_id == p.id,
+                    func.date(Water.created_at) == today,
+                )
+                .scalar(),
+                "peed_today": db.session.query(func.coalesce(func.sum(Urine.amount), 0))
+                .filter(
+                    Urine.participant_id == p.id,
+                    func.date(Urine.created_at) == today,
+                )
+                .scalar(),
+                "largest_pee": db.session.query(func.coalesce(func.max(Urine.amount), 0))
+                .filter(Urine.participant_id == p.id)
+                .scalar(),
+            }
             for p in participants
         ]
     })
 
+
+def _resolve_participant(payload: dict):
+    participant_id = payload.get("participant_id")
+    if participant_id is not None and str(participant_id).strip() != "":
+        try:
+            participant = db.session.get(Participant, int(participant_id))
+        except (TypeError, ValueError):
+            participant = None
+        if participant is not None:
+            return participant
+
+    name = str(payload.get("name", "")).strip()
+    last_name = str(payload.get("last_name", "")).strip()
+
+    if not name or not last_name:
+        return None
+
+    return Participant.query.filter(
+        Participant.name == name,
+        Participant.last_name == last_name,
+    ).first()
+
 @api_bp.route("/addWater", methods=["POST"])
 @require_auth
 def add_water():
-    payload = request.get_json()
-
-    name = payload.get("name")
-    last_name = payload.get("last_name")
+    payload = request.get_json(silent=True) or {}
     meal = bool(payload.get("meal"))
 
-    if (not name) or (not last_name):
-        return jsonify({"error": "name and last name are required."}), 400
-
-    participant = Participant.query.filter(
-        Participant.name == name,
-        Participant.last_name == last_name
-    ).first()
+    participant = _resolve_participant(payload)
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
 
-    participant_id = participant.id
-    
-    new_water = Water(participant_id=participant_id, meal=meal)
+    new_water = Water(participant_id=participant.id, meal=meal)
     db.session.add(new_water)
     db.session.commit()
+
+    return jsonify({"message": "Water entry added successfully."}), 201
     
 @api_bp.route("/addUrine", methods=["POST"])
 @require_auth
 def add_urine():
-    payload = request.get_json()
-    name = payload.get("name")
-    last_name = payload.get("last_name")
+    payload = request.get_json(silent=True) or {}
     amount = int(payload.get("amount"))
     note = str(payload.get("note", "")).strip() or None
 
-    if (not name) or (not last_name):
-        return jsonify({"error": "name and last name are required."}), 400
-    
-    participant = Participant.query.filter(
-        Participant.name == name,
-        Participant.last_name == last_name
-    ).first()
+    participant = _resolve_participant(payload)
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
-    
-    participant_id = participant.id
 
-    new_urine = Urine(participant_id=participant_id, amount=amount, note=note)
+    new_urine = Urine(participant_id=participant.id, amount=amount, note=note)
     db.session.add(new_urine)
     db.session.commit()
+
+    return jsonify({"message": "Urine entry added successfully."}), 201
 
 @api_bp.route("/addDiaper", methods=["POST"])
 @require_auth
 def add_diaper():
-    payload = request.get_json()
-    name = payload.get("name")
-    last_name = payload.get("last_name")
+    payload = request.get_json(silent=True) or {}
     weight = int(payload.get("weight"))
     note = str(payload.get("note", "")).strip() or None
 
-    if (not name) or (not last_name):
-        return jsonify({"error": "name and last name are required."}), 400
-    
-    participant = Participant.query.filter(
-        Participant.name == name,
-        Participant.last_name == last_name
-    ).first()
+    participant = _resolve_participant(payload)
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
-    
-    participant_id = participant.id
 
     liquid_weight = weight - participant.empty_diaper
 
-    new_diaper = Diaper(participant_id=participant_id, weight=liquid_weight, note=note)
+    new_diaper = Diaper(participant_id=participant.id, weight=liquid_weight, note=note)
     db.session.add(new_diaper)
     db.session.commit()
+
+    return jsonify({"message": "Diaper entry added successfully."}), 201

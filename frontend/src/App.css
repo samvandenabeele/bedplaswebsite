@@ -15,4 +15,6 @@ body {
   background:
     radial-gradient(circle at top, rgba(34, 211, 238, 0.16), transparent 36%),
     linear-gradient(180deg, #020617 0%, #0f172a 100%);
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
 }

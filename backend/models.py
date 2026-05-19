@@ -12,7 +12,6 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     token_version = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    empty_diaper = db.Column(db.Integer, nullable=False, default=0)
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -37,24 +36,25 @@ class Participant(db.Model):
     phone_2 = db.Column(db.String, unique=False, nullable=True)
     date_added = db.Column(db.DateTime, unique=False, default=lambda: datetime.now(timezone.utc))
     active = db.Column(db.Boolean, default=True)
+    empty_diaper = db.Column(db.Integer, nullable=False, default=0)
     note = db.Column(db.Text, nullable=True)
 
 class Water(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
     meal = db.Column(db.Boolean, nullable=False, default=True)
-    time = db.column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 class Urine(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
     amount = db.Column(db.Integer, nullable=False)
-    time = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     note = db.Column(db.Text, nullable=True)
 
 class Diaper(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
     weight = db.Column(db.Integer, nullable=False)
-    time = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     note = db.Column(db.Text,nullable=True)
