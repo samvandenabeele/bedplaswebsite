@@ -1,32 +1,29 @@
 import { useState, type SyntheticEvent } from "react";
 
-type AuthMode = "login" | "register";
-
 type LoginPageProps = {
-  mode: AuthMode;
   error: string | null;
-  onModeChange: (mode: AuthMode) => void;
   onLogin: (identifier: string, password: string) => Promise<void>;
-  onRegister: (
-    username: string,
-    email: string,
-    password: string,
-  ) => Promise<void>;
   onError: (message: string | null) => void;
 };
 
-function LoginPage({ mode, error, onError }: LoginPageProps) {
+function LoginPage({ error, onLogin, onError }: LoginPageProps) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const isRegisterMode = mode === "register";
 
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     onError(null);
 
     setIsSubmitting(true);
+
+    try {
+      await onLogin(identifier, password);
+    } catch (err: any) {
+      onError(err?.message ?? String(err));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -61,9 +58,7 @@ function LoginPage({ mode, error, onError }: LoginPageProps) {
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
                 placeholder="••••••••"
-                autoComplete={
-                  isRegisterMode ? "new-password" : "current-password"
-                }
+                autoComplete="current-password"
                 type="password"
                 required
               />
@@ -79,11 +74,7 @@ function LoginPage({ mode, error, onError }: LoginPageProps) {
               disabled={isSubmitting}
               className="w-full rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
             >
-              {isSubmitting
-                ? "Please wait..."
-                : isRegisterMode
-                  ? "Create account"
-                  : "Log in"}
+              {isSubmitting ? "Please wait..." : "Log in"}
             </button>
           </form>
         </section>

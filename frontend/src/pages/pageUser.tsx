@@ -107,7 +107,7 @@ function PageUser() {
 
   return (
     <section className="flex justify-center">
-      <div className="w-full max-w-5xl rounded-[2rem] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-slate-950/40 backdrop-blur-xl sm:p-6 lg:p-8">
+      <div className="w-full max-w-5xl rounded-4xl border border-white/10 bg-white/8 p-3 shadow-2xl shadow-slate-950/40 backdrop-blur-xl sm:p-6 lg:p-8">
         <div className="mb-6 flex flex-col gap-2">
           <h2 className="text-xl font-semibold text-white sm:text-2xl">
             Snel invoeren
@@ -117,7 +117,7 @@ function PageUser() {
           </p>
         </div>
 
-        <div className="mb-5 rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-3 shadow-lg shadow-slate-950/20 sm:p-5">
+        <div className="mb-5 rounded-3xl border border-white/10 bg-slate-950/55 p-3 shadow-lg shadow-slate-950/20 sm:p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <label className="flex-1 space-y-2">
               <span className="text-sm font-medium text-slate-200">Kind</span>
@@ -174,7 +174,7 @@ function PageUser() {
 
         <div className="grid items-start gap-4 lg:grid-cols-3">
           <form
-            className="h-fit self-start rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-emerald-950/20 sm:p-5"
+            className="h-fit self-start rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-emerald-950/20 sm:p-5"
             onSubmit={(event) => {
               event.preventDefault();
               void submitEntry("water");
@@ -205,7 +205,7 @@ function PageUser() {
           </form>
 
           <form
-            className="h-fit self-start rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-cyan-950/20 sm:p-5"
+            className="h-fit self-start rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-cyan-950/20 sm:p-5"
             onSubmit={(event) => {
               event.preventDefault();
               void submitEntry("urine");
@@ -252,7 +252,7 @@ function PageUser() {
           </form>
 
           <form
-            className="h-fit self-start rounded-[1.5rem] border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-fuchsia-950/20 sm:p-5"
+            className="h-fit self-start rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-fuchsia-950/20 sm:p-5"
             onSubmit={(event) => {
               event.preventDefault();
               void submitEntry("diaper");

@@ -39,6 +39,23 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
 
+        # Create a default user from environment variables if provided.
+        # This is useful for local development so an admin user exists.
+        default_username = os.environ.get("DEFAULT_USER_USERNAME")
+        default_password = os.environ.get("DEFAULT_USER_PASSWORD")
+        default_email = os.environ.get("DEFAULT_USER_EMAIL")
+
+        if default_username and default_password:
+            from models import User
+
+            existing = User.query.filter_by(username=default_username).first()
+            if existing is None:
+                user = User(username=default_username, email=default_email or None)
+                user.set_password(default_password)
+                db.session.add(user)
+                db.session.commit()
+                app.logger.info("Created default user '%s'", default_username)
+
         if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
             existing_columns = {
                 row[1]

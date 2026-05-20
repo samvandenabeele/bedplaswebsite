@@ -16,6 +16,8 @@ services:
   backend:
     build:
       context: ./backend
+      tags:
+        - ghcr.io/samvandenabeele/bedplaswebsite-backend:latest
     environment:
       DATABASE_URL: postgresql+psycopg2://bedplas:bedplas@db:5432/bedplas
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
@@ -31,6 +33,8 @@ services:
   frontend:
     build:
       context: ./frontend
+      tags:
+        - ghcr.io/samvandenabeele/bedplaswebsite-backend:latest
     depends_on:
       backend:
         condition: service_started

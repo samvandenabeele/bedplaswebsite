@@ -6,7 +6,6 @@ import {
   login,
   logout,
   me,
-  register,
   type AuthUser,
 } from "./api";
 import LoginPage from "./pages/LoginPage";
@@ -14,7 +13,6 @@ import PageAdmin from "./pages/pageAdmin";
 import PageUser from "./pages/pageUser";
 
 type View = "user" | "admin";
-type AuthMode = "login" | "register";
 
 const views: Array<{
   key: View;
@@ -38,7 +36,7 @@ function App() {
     "loading" | "anonymous" | "authenticated"
   >("loading");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
-  const [authMode, setAuthMode] = useState<AuthMode>("login");
+
   const [authError, setAuthError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<View>("user");
 
@@ -71,22 +69,7 @@ function App() {
     setAuthState("authenticated");
   }
 
-  async function handleRegister(
-    username: string,
-    email: string,
-    password: string,
-  ) {
-    setAuthError(null);
-
-    const response = await register({
-      username,
-      email: email || undefined,
-      password,
-    });
-    setCurrentUser(response.user);
-    setActiveView("user");
-    setAuthState("authenticated");
-  }
+  // registration is handled by admins; no client-side register flow
 
   async function handleLogout() {
     try {
@@ -95,7 +78,6 @@ function App() {
       clearAuthToken();
     } finally {
       setCurrentUser(null);
-      setAuthMode("login");
       setActiveView("user");
       setAuthState("anonymous");
     }
@@ -116,11 +98,8 @@ function App() {
   if (authState === "anonymous") {
     return (
       <LoginPage
-        mode={authMode}
         error={authError}
-        onModeChange={setAuthMode}
         onLogin={handleLogin}
-        onRegister={handleRegister}
         onError={setAuthError}
       />
     );
