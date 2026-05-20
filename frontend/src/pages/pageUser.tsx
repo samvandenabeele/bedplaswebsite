@@ -4,8 +4,10 @@ import {
   addUrine,
   addWater,
   queryParticipants,
+  updateEmptyDiaper,
   type ParticipantSummary,
 } from "../api";
+import CustomSelect from "../components/CustomSelect";
 
 function PageUser() {
   const [participants, setParticipants] = useState<ParticipantSummary[]>([]);
@@ -23,10 +25,17 @@ function PageUser() {
   const [urineNote, setUrineNote] = useState("");
   const [diaperWeight, setDiaperWeight] = useState("0");
   const [diaperNote, setDiaperNote] = useState("");
+  const [emptyDiaperDraft, setEmptyDiaperDraft] = useState("0");
 
   const selectedParticipant = participants.find(
     (participant) => participant.id === selectedParticipantId,
   );
+
+  useEffect(() => {
+    setEmptyDiaperDraft(
+      selectedParticipant ? String(selectedParticipant.empty_diaper) : "0",
+    );
+  }, [selectedParticipant]);
 
   async function loadParticipants() {
     setLoadingParticipants(true);
@@ -105,6 +114,53 @@ function PageUser() {
     }
   }
 
+  async function handleEmptyDiaperUpdate() {
+    if (!selectedParticipant) {
+      setError("Kies eerst een kind.");
+      return;
+    }
+
+    const nextEmptyDiaper = Number(emptyDiaperDraft);
+    if (!Number.isInteger(nextEmptyDiaper) || nextEmptyDiaper < 0) {
+      setError("Leeggewicht moet een heel getal van 0 of hoger zijn.");
+      return;
+    }
+
+    if (nextEmptyDiaper === selectedParticipant.empty_diaper) {
+      setMessage("Leeggewicht is al gelijk aan de huidige waarde.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Weet je zeker dat je het leeggewicht van ${selectedParticipant.name} ${selectedParticipant.last_name} wilt aanpassen van ${selectedParticipant.empty_diaper} g naar ${nextEmptyDiaper} g?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMessage(null);
+    setError(null);
+    setSubmitting("diaper");
+
+    try {
+      await updateEmptyDiaper({
+        participant_id: selectedParticipant.id,
+        empty_diaper: nextEmptyDiaper,
+      });
+      setMessage(`Leeggewicht aangepast voor ${selectedParticipant.name}.`);
+      await loadParticipants();
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Leeggewicht aanpassen mislukt.",
+      );
+    } finally {
+      setSubmitting(null);
+    }
+  }
+
   return (
     <section className="flex justify-center">
       <div className="w-full max-w-5xl rounded-4xl border border-white/10 bg-white/8 p-3 shadow-2xl shadow-slate-950/40 backdrop-blur-xl sm:p-6 lg:p-8">
@@ -121,23 +177,17 @@ function PageUser() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <label className="flex-1 space-y-2">
               <span className="text-sm font-medium text-slate-200">Kind</span>
-              <select
+              {/* CustomSelect provides fully-styled options that match the site */}
+              <CustomSelect
                 value={selectedParticipantId}
-                onChange={(event) =>
-                  setSelectedParticipantId(
-                    event.target.value ? Number(event.target.value) : "",
-                  )
-                }
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-emerald-300/60 focus:ring-2 focus:ring-emerald-300/20"
+                onChange={(next) => setSelectedParticipantId(next)}
+                options={participants.map((p) => ({
+                  id: p.id,
+                  label: `${p.name} ${p.last_name}`,
+                }))}
+                placeholder="Selecteer een kind"
                 disabled={loadingParticipants}
-              >
-                <option value="">Selecteer een kind</option>
-                {participants.map((participant) => (
-                  <option key={participant.id} value={participant.id}>
-                    {participant.name} {participant.last_name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
 
             <button
@@ -160,6 +210,9 @@ function PageUser() {
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
                 Grootste plas: {selectedParticipant.largest_pee}
               </span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                Lege luier: {selectedParticipant.empty_diaper}
+              </span>
             </div>
           ) : null}
         </div>
@@ -172,131 +225,191 @@ function PageUser() {
           </div>
         ) : null}
 
-        <div className="grid items-start gap-4 lg:grid-cols-3">
+        <div className="grid items-stretch gap-4 lg:grid-cols-3">
           <form
-            className="h-fit self-start rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-emerald-950/20 sm:p-5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitEntry("water");
-            }}
-          >
-            <h3 className="text-lg font-semibold text-white">Water</h3>
-            <p className="mt-1 text-sm text-slate-400">
-              Voeg een drinkmoment toe.
-            </p>
-
-            <label className="mt-4 flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
-              <input
-                type="checkbox"
-                checked={meal}
-                onChange={(event) => setMeal(event.target.checked)}
-                className="h-4 w-4 rounded border-white/20 bg-white/10 text-emerald-400"
-              />
-              Bij de maaltijd
-            </label>
-
-            <button
-              type="submit"
-              disabled={submitting === "water" || !selectedParticipant}
-              className="mt-4 w-full rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting === "water" ? "Bezig..." : "Water opslaan"}
-            </button>
-          </form>
-
-          <form
-            className="h-fit self-start rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-cyan-950/20 sm:p-5"
+            className="flex h-full w-full flex-col rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-cyan-950/20 sm:p-5"
             onSubmit={(event) => {
               event.preventDefault();
               void submitEntry("urine");
             }}
           >
-            <h3 className="text-lg font-semibold text-white">Plas</h3>
-            <p className="mt-1 text-sm text-slate-400">
-              Vul de hoeveelheid in milliliter in.
-            </p>
+            <div>
+              <h3 className="text-lg font-semibold text-white">Plas</h3>
+              <p className="mt-1 text-sm text-slate-400">
+                Vul de hoeveelheid in milliliter in.
+              </p>
+            </div>
 
-            <label className="mt-4 space-y-2 block">
-              <span className="text-sm font-medium text-slate-200">
-                Hoeveelheid
-              </span>
-              <input
-                value={urineAmount}
-                onChange={(event) => setUrineAmount(event.target.value)}
-                type="number"
-                min={0}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
-              />
-            </label>
+            <div className="mt-auto flex flex-col gap-4">
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium text-slate-200">
+                  Hoeveelheid
+                </span>
+                <input
+                  value={urineAmount}
+                  onChange={(event) => setUrineAmount(event.target.value)}
+                  type="number"
+                  min={0}
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                />
+              </label>
 
-            <label className="mt-4 space-y-2 block">
-              <span className="text-sm font-medium text-slate-200">
-                Opmerking
-              </span>
-              <textarea
-                value={urineNote}
-                onChange={(event) => setUrineNote(event.target.value)}
-                rows={3}
-                placeholder="Bijv. ongelukje"
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
-              />
-            </label>
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium text-slate-200">
+                  Opmerking
+                </span>
+                <textarea
+                  value={urineNote}
+                  onChange={(event) => setUrineNote(event.target.value)}
+                  rows={3}
+                  placeholder="Bijv. ongelukje"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                />
+              </label>
 
-            <button
-              type="submit"
-              disabled={submitting === "urine" || !selectedParticipant}
-              className="mt-4 w-full rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting === "urine" ? "Bezig..." : "Plas opslaan"}
-            </button>
+              <button
+                type="submit"
+                disabled={submitting === "urine" || !selectedParticipant}
+                className="w-full rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting === "urine" ? "Bezig..." : "Plas opslaan"}
+              </button>
+            </div>
           </form>
 
           <form
-            className="h-fit self-start rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-fuchsia-950/20 sm:p-5"
+            className="flex h-full w-full flex-col rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-fuchsia-950/20 sm:p-5"
             onSubmit={(event) => {
               event.preventDefault();
               void submitEntry("diaper");
             }}
           >
-            <h3 className="text-lg font-semibold text-white">Luier</h3>
-            <p className="mt-1 text-sm text-slate-400">
-              Vul het gewicht van de luier in.
-            </p>
+            <div>
+              <h3 className="text-lg font-semibold text-white">Luier</h3>
+              <p className="mt-1 text-sm text-slate-400">
+                Vul het gewicht van de luier in.
+              </p>
+            </div>
 
-            <label className="mt-4 space-y-2 block">
-              <span className="text-sm font-medium text-slate-200">
-                Gewicht
-              </span>
-              <input
-                value={diaperWeight}
-                onChange={(event) => setDiaperWeight(event.target.value)}
-                type="number"
-                min={0}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-fuchsia-300/60 focus:ring-2 focus:ring-fuchsia-300/20"
-              />
-            </label>
+            <div className="mt-auto flex flex-col gap-4">
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium text-slate-200">
+                  Gewicht
+                </span>
+                <input
+                  value={diaperWeight}
+                  onChange={(event) => setDiaperWeight(event.target.value)}
+                  type="number"
+                  min={0}
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-fuchsia-300/60 focus:ring-2 focus:ring-fuchsia-300/20"
+                />
+              </label>
 
-            <label className="mt-4 space-y-2 block">
-              <span className="text-sm font-medium text-slate-200">
-                Opmerking
-              </span>
-              <textarea
-                value={diaperNote}
-                onChange={(event) => setDiaperNote(event.target.value)}
-                rows={3}
-                placeholder="Bijv. doorgelekt"
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/60 focus:ring-2 focus:ring-fuchsia-300/20"
-              />
-            </label>
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium text-slate-200">
+                  Opmerking
+                </span>
+                <textarea
+                  value={diaperNote}
+                  onChange={(event) => setDiaperNote(event.target.value)}
+                  rows={3}
+                  placeholder="Bijv. doorgelekt"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-fuchsia-300/60 focus:ring-2 focus:ring-fuchsia-300/20"
+                />
+              </label>
 
-            <button
-              type="submit"
-              disabled={submitting === "diaper" || !selectedParticipant}
-              className="mt-4 w-full rounded-2xl bg-fuchsia-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-fuchsia-300 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting === "diaper" ? "Bezig..." : "Luier opslaan"}
-            </button>
+              <button
+                type="submit"
+                disabled={submitting === "diaper" || !selectedParticipant}
+                className="w-full rounded-2xl bg-fuchsia-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-fuchsia-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting === "diaper" ? "Bezig..." : "Luier opslaan"}
+              </button>
+            </div>
           </form>
+          <div className="grid w-full gap-4 lg:h-full lg:grid-rows-2">
+            <form
+              className="flex h-full w-full flex-col rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-emerald-950/20 sm:p-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitEntry("water");
+              }}
+            >
+              <div>
+                <h3 className="text-lg font-semibold text-white">Water</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Voeg een drinkmoment toe.
+                </p>
+              </div>
+
+              <div className="mt-auto flex flex-col gap-4">
+                <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={meal}
+                    onChange={(event) => setMeal(event.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-white/10 accent-emerald-400"
+                  />
+                  Bij de maaltijd
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={submitting === "water" || !selectedParticipant}
+                  className="w-full rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {submitting === "water" ? "Bezig..." : "Water opslaan"}
+                </button>
+              </div>
+            </form>
+            <form
+              className="flex h-full w-full flex-col rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-slate-950/20 sm:p-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleEmptyDiaperUpdate();
+              }}
+            >
+              <div>
+                <h3 className="text-lg font-semibold text-white">
+                  Leeggewicht
+                </h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Pas het standaard leeggewicht aan.
+                </p>
+              </div>
+
+              <div className="mt-auto flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="space-y-2 sm:flex-1">
+                  <span className="text-sm font-medium text-slate-200">
+                    Nieuw leeggewicht
+                  </span>
+                  <input
+                    value={emptyDiaperDraft}
+                    onChange={(event) =>
+                      setEmptyDiaperDraft(event.target.value)
+                    }
+                    type="number"
+                    min={0}
+                    step={1}
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-emerald-300/60 focus:ring-2 focus:ring-emerald-300/20"
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={
+                    submitting === "diaper" ||
+                    !selectedParticipant ||
+                    Number(emptyDiaperDraft) ===
+                      selectedParticipant.empty_diaper
+                  }
+                  className="rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {submitting === "diaper" ? "Bezig..." : "Wijzig"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </section>

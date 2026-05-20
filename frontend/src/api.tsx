@@ -16,6 +16,7 @@ export type ParticipantSummary = {
   last_name: string;
   phone_1: string;
   phone_2: string | null;
+  empty_diaper: number;
   drank_today: number;
   peed_today: number;
   largest_pee: number;
@@ -71,6 +72,11 @@ export type DiaperPayload = {
   last_name: string;
   weight: number;
   note?: string;
+};
+
+export type EmptyDiaperPayload = {
+  participant_id: number;
+  empty_diaper: number;
 };
 
 const DEFAULT_API_BASE_URL = "/api";
@@ -246,4 +252,14 @@ export function addDiaper(payload: DiaperPayload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function updateEmptyDiaper(payload: EmptyDiaperPayload) {
+  return request<{ message: string; empty_diaper: number }>(
+    "/updateEmptyDiaper",
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
 }
