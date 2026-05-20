@@ -5,7 +5,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from sqlalchemy import text
 
 from config import Config
-from extensions import db
+from extensions import db, migrate
 from routes import api_bp
 
 
@@ -14,6 +14,8 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
 
     db.init_app(app)
+    # Initialize Flask-Migrate
+    migrate.init_app(app, db)
     app.register_blueprint(api_bp)
 
     allowed_origins = {

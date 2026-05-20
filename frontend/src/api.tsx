@@ -22,6 +22,12 @@ export type ParticipantSummary = {
   largest_pee: number;
 };
 
+export type CounselorSummary = {
+  id: number;
+  username: string;
+  email: string | null;
+};
+
 export type ExcelCounselorAccount = {
   username: string;
   email: string;
@@ -60,6 +66,10 @@ export type ParticipantPayload = {
 };
 
 export type ParticipantQuery = Partial<
+  Pick<ParticipantPayload, "name" | "last_name" | "phone_1" | "phone_2">
+>;
+
+export type CounselorQuery = Partial<
   Pick<ParticipantPayload, "name" | "last_name" | "phone_1" | "phone_2">
 >;
 
@@ -240,6 +250,13 @@ export function deleteParticipant(name: string, last_name: string) {
 
 export function queryParticipants(payload: ParticipantQuery = {}) {
   return request<{ participants: ParticipantSummary[] }>("/queryParticipant", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function queryCounselors(payload: CounselorQuery = {}) {
+  return request<{ counselors: CounselorSummary[] }>("/queryCounselor", {
     method: "POST",
     body: JSON.stringify(payload),
   });

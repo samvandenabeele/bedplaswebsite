@@ -209,8 +209,33 @@ def query_participant():
                 "largest_pee": db.session.query(func.coalesce(func.max(Urine.amount), 0))
                 .filter(Urine.participant_id == p.id)
                 .scalar(),
+                "active": p.active,
             }
             for p in participants
+        ]
+    })
+
+@api_bp.route("/queryCounselor", methods=["POST"])
+@require_auth
+def query_counselor():
+    payload = request.get_json(silent=True) or {}
+    # Query users (counselors). There is no `active` on User, so just query User
+    query = User.query
+
+    # Accept either `username` or `name` as a search term for the username
+    username_term = payload.get("username") or payload.get("name")
+    if username_term:
+        query = query.filter(User.username.ilike(f"%{username_term}%"))
+
+    if payload.get("email"):
+        query = query.filter(User.email.ilike(f"%{payload.get('email')}%"))
+
+    counselors = query.all()
+
+    return jsonify({
+        "counselors": [
+            {"id": c.id, "username": c.username, "email": c.email, "active": c.active}
+            for c in counselors
         ]
     })
 

@@ -11,6 +11,8 @@ import {
   register,
   uploadParticipantsCounselorsExcel,
   type ParticipantSummary,
+  queryCounselors,
+  type CounselorSummary,
 } from "../api";
 
 function PageAdmin() {
@@ -27,6 +29,9 @@ function PageAdmin() {
   const [excelUploadError, setExcelUploadError] = useState<string | null>(null);
   const [isUploadingExcel, setIsUploadingExcel] = useState(false);
   const excelInputRef = useRef<HTMLInputElement>(null);
+  const [counselors, setCounselors] = useState<CounselorSummary[]>([]);
+  const [isLoadingCounselors, setIsLoadingCounselors] = useState(true);
+  const [counselorError, setCounselorError] = useState<string | null>(null);
 
   const [participantForm, setParticipantForm] = useState({
     name: "",
@@ -62,6 +67,30 @@ function PageAdmin() {
   useEffect(() => {
     void loadParticipants();
   }, []);
+
+  async function loadCounselors() {
+    setIsLoadingCounselors(true);
+    setCounselorError(null);
+
+    try {
+      const response = await queryCounselors();
+      setCounselors(response.counselors);
+    } catch (error) {
+      setCounselorError(
+        error instanceof Error ? error.message : "Failed to load counselors.",
+      );
+    } finally {
+      setIsLoadingCounselors(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadCounselors();
+  }, []);
+
+  async function loadData() {
+    await Promise.all([loadParticipants(), loadCounselors()]);
+  }
 
   async function handleParticipantSubmit(
     event: SyntheticEvent<HTMLFormElement>,
@@ -118,6 +147,7 @@ function PageAdmin() {
         password: "",
         confirmPassword: "",
       });
+      await loadCounselors();
     } catch (error) {
       setAccountStatus(
         error instanceof Error
@@ -169,10 +199,10 @@ function PageAdmin() {
 
           <button
             type="button"
-            onClick={() => void loadParticipants()}
+            onClick={() => void loadData()}
             className="w-fit rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80"
           >
-            Refresh participants
+            Refresh data
           </button>
         </div>
 
@@ -421,7 +451,61 @@ function PageAdmin() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold text-white">
-                  Participant data
+                  Counselor data
+                </h3>
+                <p className="text-sm text-slate-400">
+                  View the current counselors.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            {isLoadingCounselors ? (
+              <div className="px-5 py-8 text-sm text-slate-300 sm:px-6">
+                Loading counselors...
+              </div>
+            ) : counselors.length === 0 ? (
+              <div className="px-5 py-8 text-sm text-slate-300 sm:px-6">
+                No counselors found.
+              </div>
+            ) : (
+              <table className="min-w-full divide-y divide-white/10 text-left text-sm text-slate-200">
+                <thead className="bg-white/5 text-[0.7rem] uppercase tracking-[0.16em] text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3 font-medium sm:px-6">Name</th>
+                    <th className="px-4 py-3 font-medium sm:px-6">email</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {counselors.map((counselor) => (
+                    <tr key={counselor.id} className="hover:bg-white/3">
+                      <td className="px-4 py-3 font-medium text-white sm:px-6">
+                        {counselor.username}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 sm:px-6">
+                        {counselor.email}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {counselorError && !isLoadingCounselors ? (
+            <div className="border-t border-white/10 px-5 py-3 text-sm text-rose-100 sm:px-6">
+              {counselorError}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="mt-6 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 shadow-lg shadow-cyan-950/20">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-5 py-4 sm:px-6 sm:py-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold text-white">
+                  Partisipant data
                 </h3>
                 <p className="text-sm text-slate-400">
                   View the current participants and their activity totals.
