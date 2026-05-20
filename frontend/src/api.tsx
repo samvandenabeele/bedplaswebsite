@@ -22,6 +22,18 @@ export type ParticipantSummary = {
   largest_pee: number;
 };
 
+export type ExcelCounselorAccount = {
+  username: string;
+  email: string;
+  password: string;
+};
+
+export type ExcelParticipantsCounselorsResponse = {
+  participants_created: number;
+  participants_skipped: number;
+  counselors_created: ExcelCounselorAccount[];
+};
+
 export type ApiError = {
   error: string;
 };
@@ -231,6 +243,19 @@ export function queryParticipants(payload: ParticipantQuery = {}) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function uploadParticipantsCounselorsExcel(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return request<ExcelParticipantsCounselorsResponse>(
+    "/excelParticipantsCounselors",
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
 }
 
 export function addWater(payload: WaterPayload) {

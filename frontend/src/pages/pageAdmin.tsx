@@ -1,8 +1,15 @@
-import { useEffect, useState, type SyntheticEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type SyntheticEvent,
+} from "react";
 import {
   addParticipant,
   queryParticipants,
   register,
+  uploadParticipantsCounselorsExcel,
   type ParticipantSummary,
 } from "../api";
 
@@ -14,6 +21,12 @@ function PageAdmin() {
     null,
   );
   const [accountStatus, setAccountStatus] = useState<string | null>(null);
+  const [excelUploadStatus, setExcelUploadStatus] = useState<string | null>(
+    null,
+  );
+  const [excelUploadError, setExcelUploadError] = useState<string | null>(null);
+  const [isUploadingExcel, setIsUploadingExcel] = useState(false);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const [participantForm, setParticipantForm] = useState({
     name: "",
@@ -114,9 +127,35 @@ function PageAdmin() {
     }
   }
 
+  async function handleExcelFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFile = event.target.files?.[0];
+    if (!selectedFile) {
+      return;
+    }
+
+    setExcelUploadStatus(null);
+    setExcelUploadError(null);
+    setIsUploadingExcel(true);
+
+    try {
+      const result = await uploadParticipantsCounselorsExcel(selectedFile);
+      setExcelUploadStatus(
+        `Upload complete. ${result.participants_created} participants added, ${result.participants_skipped} skipped, ${result.counselors_created.length} counselors created.`,
+      );
+      await loadParticipants();
+    } catch (error) {
+      setExcelUploadError(
+        error instanceof Error ? error.message : "Failed to upload Excel file.",
+      );
+    } finally {
+      setIsUploadingExcel(false);
+      event.target.value = "";
+    }
+  }
+
   return (
     <section className="flex justify-center">
-      <div className="w-full max-w-6xl rounded-[2rem] border border-white/10 bg-white/8 p-3 shadow-2xl shadow-slate-950/40 backdrop-blur-xl sm:p-6 lg:p-8">
+      <div className="w-full max-w-6xl rounded-4xl border border-white/10 bg-white/8 p-3 shadow-2xl shadow-slate-950/40 backdrop-blur-xl sm:p-6 lg:p-8">
         <div className="mb-8 flex flex-col gap-3 border-b border-white/10 pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
@@ -378,13 +417,46 @@ function PageAdmin() {
         </div>
 
         <section className="mt-6 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 shadow-lg shadow-cyan-950/20">
-          <div className="flex flex-col gap-2 border-b border-white/10 px-5 py-4 sm:px-6 sm:py-5">
-            <h3 className="text-lg font-semibold text-white">
-              Participant data
-            </h3>
-            <p className="text-sm text-slate-400">
-              View the current participants and their activity totals.
-            </p>
+          <div className="flex flex-col gap-4 border-b border-white/10 px-5 py-4 sm:px-6 sm:py-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold text-white">
+                  Participant data
+                </h3>
+                <p className="text-sm text-slate-400">
+                  View the current participants and their activity totals.
+                </p>
+              </div>
+
+              <div className="flex flex-col items-start gap-2 sm:items-end">
+                <input
+                  ref={excelInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleExcelFileChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => excelInputRef.current?.click()}
+                  disabled={isUploadingExcel}
+                  className="rounded-2xl border border-cyan-300/35 bg-cyan-300/15 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/25 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+                >
+                  {isUploadingExcel ? "Uploading Excel..." : "Upload Excel"}
+                </button>
+              </div>
+            </div>
+
+            {excelUploadStatus ? (
+              <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+                {excelUploadStatus}
+              </div>
+            ) : null}
+            {excelUploadError ? (
+              <div className="rounded-2xl border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                {excelUploadError}
+              </div>
+            ) : null}
           </div>
 
           <div className="overflow-x-auto">
@@ -416,7 +488,7 @@ function PageAdmin() {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {participants.map((participant) => (
-                    <tr key={participant.id} className="hover:bg-white/[0.03]">
+                    <tr key={participant.id} className="hover:bg-white/3">
                       <td className="px-4 py-3 font-medium text-white sm:px-6">
                         {participant.name} {participant.last_name}
                       </td>
