@@ -101,6 +101,33 @@ export type EmptyDiaperPayload = {
   empty_diaper: number;
 };
 
+export type ParticipantRecentEntry = {
+  id: number;
+  kind: "water" | "urine" | "diaper";
+  created_at: string | null;
+  meal: boolean | null;
+  amount: number | null;
+  weight: number | null;
+  note: string | null;
+};
+
+export type RecentEntry = ParticipantRecentEntry & {
+  participant_id: number;
+  participant_name: string;
+  participant_last_name: string;
+};
+
+export type EntryKind = ParticipantRecentEntry["kind"];
+
+export type UpdateEntryPayload = {
+  kind: EntryKind;
+  id: number;
+  meal?: boolean;
+  amount?: number;
+  weight?: number;
+  note?: string;
+};
+
 const DEFAULT_API_BASE_URL = "/api";
 const AUTH_TOKEN_STORAGE_KEY = "bedplas_auth_token";
 
@@ -304,4 +331,42 @@ export function updateEmptyDiaper(payload: EmptyDiaperPayload) {
       body: JSON.stringify(payload),
     },
   );
+}
+
+export function getParticipantRecentEntries(participantId: number, limit = 50) {
+  const safeLimit = Number.isFinite(limit)
+    ? Math.max(1, Math.trunc(limit))
+    : 50;
+  return request<{ entries: ParticipantRecentEntry[] }>(
+    `/participantRecentEntries/${participantId}?limit=${safeLimit}`,
+    {
+      method: "GET",
+    },
+  );
+}
+
+export function getRecentEntries(limit = 100) {
+  const safeLimit = Number.isFinite(limit)
+    ? Math.max(1, Math.trunc(limit))
+    : 100;
+  return request<{ entries: RecentEntry[] }>(
+    `/recentEntries?limit=${safeLimit}`,
+    {
+      method: "GET",
+    },
+  );
+}
+
+export function updateEntry(payload: UpdateEntryPayload) {
+  const { kind, id, ...updates } = payload;
+  return request<{ message: string }>(`/entry/${kind}/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+export function deleteEntry(kind: EntryKind, id: number) {
+  return request<{ message: string }>(`/entry/${kind}/${id}`, {
+    method: "DELETE",
+  });
 }

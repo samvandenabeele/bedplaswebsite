@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-type Option = { id: number; label: string };
+type OptionValue = string | number;
+type Option = { id: OptionValue; label: string };
 
 type Props = {
-  value: number | "";
-  onChange: (next: number | "") => void;
+  value: OptionValue | "";
+  onChange: (next: OptionValue | "") => void;
   options: Option[];
   placeholder?: string;
   disabled?: boolean;

@@ -7,13 +7,18 @@ import {
 } from "react";
 import {
   addParticipant,
+  deleteEntry,
+  getRecentEntries,
   queryParticipants,
   register,
+  updateEntry,
   uploadParticipantsCounselorsExcel,
   type ParticipantSummary,
   queryCounselors,
   type CounselorSummary,
+  type RecentEntry,
 } from "../api";
+import CustomSelect from "../components/CustomSelect";
 
 function PageAdmin() {
   const [participants, setParticipants] = useState<ParticipantSummary[]>([]);
@@ -32,6 +37,24 @@ function PageAdmin() {
   const [counselors, setCounselors] = useState<CounselorSummary[]>([]);
   const [isLoadingCounselors, setIsLoadingCounselors] = useState(true);
   const [counselorError, setCounselorError] = useState<string | null>(null);
+  const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
+  const [isLoadingRecentEntries, setIsLoadingRecentEntries] = useState(true);
+  const [recentEntriesError, setRecentEntriesError] = useState<string | null>(
+    null,
+  );
+  const [entryActionKey, setEntryActionKey] = useState<string | null>(null);
+  const [editingEntryKey, setEditingEntryKey] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({
+    meal: false,
+    amount: "0",
+    weight: "0",
+    note: "",
+  });
+  const [recentEntryTypeFilter, setRecentEntryTypeFilter] = useState<
+    "all" | RecentEntry["kind"]
+  >("all");
+  const [recentEntryParticipantFilter, setRecentEntryParticipantFilter] =
+    useState("");
 
   const [participantForm, setParticipantForm] = useState({
     name: "",
@@ -88,8 +111,34 @@ function PageAdmin() {
     void loadCounselors();
   }, []);
 
+  async function loadRecentEntries() {
+    setIsLoadingRecentEntries(true);
+    setRecentEntriesError(null);
+
+    try {
+      const response = await getRecentEntries(120);
+      setRecentEntries(response.entries);
+    } catch (error) {
+      setRecentEntriesError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load recent entries.",
+      );
+    } finally {
+      setIsLoadingRecentEntries(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadRecentEntries();
+  }, []);
+
   async function loadData() {
-    await Promise.all([loadParticipants(), loadCounselors()]);
+    await Promise.all([
+      loadParticipants(),
+      loadCounselors(),
+      loadRecentEntries(),
+    ]);
   }
 
   async function handleParticipantSubmit(
@@ -116,7 +165,7 @@ function PageAdmin() {
         phone_2: "",
         empty_diaper: "0",
       });
-      await loadParticipants();
+      await Promise.all([loadParticipants(), loadRecentEntries()]);
     } catch (error) {
       setParticipantError(
         error instanceof Error ? error.message : "Failed to add participant.",
@@ -172,7 +221,7 @@ function PageAdmin() {
       setExcelUploadStatus(
         `Upload complete. ${result.participants_created} participants added, ${result.participants_skipped} skipped, ${result.counselors_created.length} counselors created.`,
       );
-      await loadParticipants();
+      await Promise.all([loadParticipants(), loadRecentEntries()]);
     } catch (error) {
       setExcelUploadError(
         error instanceof Error ? error.message : "Failed to upload Excel file.",
@@ -180,6 +229,161 @@ function PageAdmin() {
     } finally {
       setIsUploadingExcel(false);
       event.target.value = "";
+    }
+  }
+
+  function formatEntryTime(timestamp: string | null) {
+    if (!timestamp) {
+      return "-";
+    }
+
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) {
+      return "-";
+    }
+
+    return new Intl.DateTimeFormat("nl-BE", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  }
+
+  function formatEntryType(kind: RecentEntry["kind"]) {
+    if (kind === "water") {
+      return "Water";
+    }
+
+    if (kind === "urine") {
+      return "Plas";
+    }
+
+    return "Luier";
+  }
+
+  function formatEntryDetails(entry: RecentEntry) {
+    if (entry.kind === "water") {
+      return entry.meal ? "Drinkmoment bij maaltijd" : "Drinkmoment";
+    }
+
+    if (entry.kind === "urine") {
+      return `${entry.amount ?? 0} ml`;
+    }
+
+    return `${entry.weight ?? 0} g`;
+  }
+
+  const normalizedParticipantFilter = recentEntryParticipantFilter
+    .trim()
+    .toLowerCase();
+
+  const filteredRecentEntries = recentEntries.filter((entry) => {
+    const typeMatch =
+      recentEntryTypeFilter === "all" || entry.kind === recentEntryTypeFilter;
+    const participantFullName =
+      `${entry.participant_name} ${entry.participant_last_name}`
+        .trim()
+        .toLowerCase();
+    const participantMatch =
+      !normalizedParticipantFilter ||
+      participantFullName.includes(normalizedParticipantFilter);
+
+    return typeMatch && participantMatch;
+  });
+
+  function rowKeyForEntry(entry: RecentEntry) {
+    return `${entry.kind}-${entry.id}-${entry.participant_id}`;
+  }
+
+  function startEditingRecentEntry(entry: RecentEntry) {
+    setEditingEntryKey(rowKeyForEntry(entry));
+    setEditDraft({
+      meal: Boolean(entry.meal),
+      amount: String(entry.amount ?? 0),
+      weight: String(entry.weight ?? 0),
+      note: entry.note ?? "",
+    });
+  }
+
+  async function handleSaveRecentEntry(entry: RecentEntry) {
+    const rowKey = rowKeyForEntry(entry);
+    setEntryActionKey(rowKey);
+    setRecentEntriesError(null);
+
+    try {
+      if (entry.kind === "water") {
+        await updateEntry({
+          kind: "water",
+          id: entry.id,
+          meal: editDraft.meal,
+        });
+      }
+
+      if (entry.kind === "urine") {
+        const nextAmount = Number(editDraft.amount);
+        if (!Number.isFinite(nextAmount) || nextAmount < 0) {
+          throw new Error("Amount must be 0 or greater.");
+        }
+
+        await updateEntry({
+          kind: "urine",
+          id: entry.id,
+          amount: Math.trunc(nextAmount),
+          note: editDraft.note,
+        });
+      }
+
+      if (entry.kind === "diaper") {
+        const nextWeight = Number(editDraft.weight);
+        if (!Number.isFinite(nextWeight) || nextWeight < 0) {
+          throw new Error("Weight must be 0 or greater.");
+        }
+
+        await updateEntry({
+          kind: "diaper",
+          id: entry.id,
+          weight: Math.trunc(nextWeight),
+          note: editDraft.note,
+        });
+      }
+
+      setEditingEntryKey(null);
+      await Promise.all([loadParticipants(), loadRecentEntries()]);
+    } catch (entryError) {
+      setRecentEntriesError(
+        entryError instanceof Error
+          ? entryError.message
+          : "Failed to update entry.",
+      );
+    } finally {
+      setEntryActionKey(null);
+    }
+  }
+
+  async function handleDeleteRecentEntry(entry: RecentEntry) {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this entry?",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const rowKey = rowKeyForEntry(entry);
+    setEntryActionKey(rowKey);
+    setRecentEntriesError(null);
+
+    try {
+      await deleteEntry(entry.kind, entry.id);
+      await Promise.all([loadParticipants(), loadRecentEntries()]);
+    } catch (entryError) {
+      setRecentEntriesError(
+        entryError instanceof Error
+          ? entryError.message
+          : "Failed to delete entry.",
+      );
+    } finally {
+      setEntryActionKey(null);
     }
   }
 
@@ -505,7 +709,7 @@ function PageAdmin() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold text-white">
-                  Partisipant data
+                  Participant data
                 </h3>
                 <p className="text-sm text-slate-400">
                   View the current participants and their activity totals.
@@ -601,6 +805,273 @@ function PageAdmin() {
           {participantError && !isLoadingParticipants ? (
             <div className="border-t border-white/10 px-5 py-3 text-sm text-rose-100 sm:px-6">
               {participantError}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="mt-6 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 shadow-lg shadow-cyan-950/20">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-5 py-4 sm:px-6 sm:py-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold text-white">
+                  Recent participant entries
+                </h3>
+                <p className="text-sm text-slate-400">
+                  Latest water, pee, and diaper entries across all participants.
+                </p>
+              </div>
+
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-80">
+                <input
+                  value={recentEntryParticipantFilter}
+                  onChange={(event) =>
+                    setRecentEntryParticipantFilter(event.target.value)
+                  }
+                  placeholder="Filter by participant name"
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                />
+                <div className="min-w-52">
+                  <CustomSelect
+                    value={recentEntryTypeFilter}
+                    onChange={(next) =>
+                      setRecentEntryTypeFilter(
+                        next as "all" | RecentEntry["kind"],
+                      )
+                    }
+                    options={[
+                      { id: "all", label: "All entry types" },
+                      { id: "water", label: "Water" },
+                      { id: "urine", label: "Pee" },
+                      { id: "diaper", label: "Diaper" },
+                    ]}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            {isLoadingRecentEntries ? (
+              <div className="px-5 py-8 text-sm text-slate-300 sm:px-6">
+                Loading recent entries...
+              </div>
+            ) : filteredRecentEntries.length === 0 ? (
+              <div className="px-5 py-8 text-sm text-slate-300 sm:px-6">
+                No entries match the current filters.
+              </div>
+            ) : (
+              <table className="min-w-full divide-y divide-white/10 text-left text-sm text-slate-200">
+                <thead className="bg-white/5 text-[0.7rem] uppercase tracking-[0.16em] text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3 font-medium sm:px-6">Time</th>
+                    <th className="px-4 py-3 font-medium sm:px-6">
+                      Participant
+                    </th>
+                    <th className="px-4 py-3 font-medium sm:px-6">Type</th>
+                    <th className="px-4 py-3 font-medium sm:px-6">Details</th>
+                    <th className="px-4 py-3 font-medium sm:px-6">Note</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {filteredRecentEntries.map((entry) => {
+                    const rowKey = rowKeyForEntry(entry);
+                    const isEditing = editingEntryKey === rowKey;
+                    return (
+                      <tr
+                        key={`${entry.kind}-${entry.id}-${entry.participant_id}`}
+                        className="group hover:bg-white/3"
+                      >
+                        <td className="px-4 py-3 text-slate-300 sm:px-6 whitespace-nowrap">
+                          {formatEntryTime(entry.created_at)}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-white sm:px-6 whitespace-nowrap">
+                          {entry.participant_name} {entry.participant_last_name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 sm:px-6 whitespace-nowrap">
+                          {formatEntryType(entry.kind)}
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 sm:px-6 whitespace-nowrap">
+                          {isEditing ? (
+                            entry.kind === "water" ? (
+                              <label className="inline-flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={editDraft.meal}
+                                  onChange={(event) =>
+                                    setEditDraft((current) => ({
+                                      ...current,
+                                      meal: event.target.checked,
+                                    }))
+                                  }
+                                  className="h-4 w-4 rounded border-white/20 bg-white/10 accent-cyan-400"
+                                />
+                                With meal
+                              </label>
+                            ) : (
+                              <input
+                                type="number"
+                                min={0}
+                                value={
+                                  entry.kind === "urine"
+                                    ? editDraft.amount
+                                    : editDraft.weight
+                                }
+                                onChange={(event) =>
+                                  setEditDraft((current) => ({
+                                    ...current,
+                                    [entry.kind === "urine"
+                                      ? "amount"
+                                      : "weight"]: event.target.value,
+                                  }))
+                                }
+                                className="w-28 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-slate-100 outline-none focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                              />
+                            )
+                          ) : (
+                            formatEntryDetails(entry)
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 sm:px-6">
+                          <div className="flex items-center justify-between gap-3">
+                            {isEditing && entry.kind !== "water" ? (
+                              <input
+                                type="text"
+                                value={editDraft.note}
+                                onChange={(event) =>
+                                  setEditDraft((current) => ({
+                                    ...current,
+                                    note: event.target.value,
+                                  }))
+                                }
+                                className="w-full max-w-56 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-slate-100 outline-none focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                              />
+                            ) : (
+                              <span>{entry.note || "-"}</span>
+                            )}
+                            <div className="flex items-center gap-2 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleSaveRecentEntry(entry)
+                                    }
+                                    disabled={entryActionKey === rowKey}
+                                    className="rounded-lg border border-emerald-300/30 bg-emerald-500/10 p-1.5 text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+                                    aria-label="Save entry"
+                                    title="Save"
+                                  >
+                                    <svg
+                                      viewBox="0 0 20 20"
+                                      className="h-4 w-4"
+                                      fill="none"
+                                    >
+                                      <path
+                                        d="M4 10l4 4 8-8"
+                                        stroke="currentColor"
+                                        strokeWidth="1.8"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingEntryKey(null)}
+                                    disabled={entryActionKey === rowKey}
+                                    className="rounded-lg border border-white/20 bg-white/5 p-1.5 text-slate-300 transition hover:bg-white/10 disabled:opacity-50"
+                                    aria-label="Cancel editing"
+                                    title="Cancel"
+                                  >
+                                    <svg
+                                      viewBox="0 0 20 20"
+                                      className="h-4 w-4"
+                                      fill="none"
+                                    >
+                                      <path
+                                        d="M5 5l10 10M15 5L5 15"
+                                        stroke="currentColor"
+                                        strokeWidth="1.8"
+                                        strokeLinecap="round"
+                                      />
+                                    </svg>
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingRecentEntry(entry)}
+                                  disabled={entryActionKey === rowKey}
+                                  className="rounded-lg border border-sky-300/30 bg-sky-500/10 p-1.5 text-sky-300 transition hover:bg-sky-500/20 disabled:opacity-50"
+                                  aria-label="Edit entry"
+                                  title="Edit"
+                                >
+                                  <svg
+                                    viewBox="0 0 20 20"
+                                    className="h-4 w-4"
+                                    fill="none"
+                                  >
+                                    <path
+                                      d="M13.9 3.1l3 3L7 16H4v-3L13.9 3.1z"
+                                      stroke="currentColor"
+                                      strokeWidth="1.8"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleDeleteRecentEntry(entry)
+                                }
+                                disabled={entryActionKey === rowKey}
+                                className="rounded-lg border border-rose-300/30 bg-rose-500/10 p-1.5 text-rose-300 transition hover:bg-rose-500/20 disabled:opacity-50"
+                                aria-label="Delete entry"
+                                title="Delete"
+                              >
+                                <svg
+                                  viewBox="0 0 20 20"
+                                  className="h-4 w-4"
+                                  fill="none"
+                                >
+                                  <path
+                                    d="M3 5h14"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                    strokeLinecap="round"
+                                  />
+                                  <path
+                                    d="M8 5V3h4v2"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                  <path
+                                    d="M6 7l.6 9h6.8L14 7"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {recentEntriesError && !isLoadingRecentEntries ? (
+            <div className="border-t border-white/10 px-5 py-3 text-sm text-rose-100 sm:px-6">
+              {recentEntriesError}
             </div>
           ) : null}
         </section>

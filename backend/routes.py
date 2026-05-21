@@ -344,6 +344,245 @@ def add_diaper():
 
     return jsonify({"message": "Diaper entry added successfully."}), 201
 
+
+@api_bp.get("/participantRecentEntries/<int:participant_id>")
+@require_auth
+def participant_recent_entries(participant_id: int):
+    participant = db.session.get(Participant, participant_id)
+    if participant is None:
+        return jsonify({"error": "Participant not found."}), 404
+
+    try:
+        limit = int(request.args.get("limit", 50))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be an integer."}), 400
+
+    if limit < 1:
+        return jsonify({"error": "limit must be greater than 0."}), 400
+
+    # Keep this bounded to protect the endpoint from very large requests.
+    limit = min(limit, 200)
+
+    water_entries = (
+        Water.query.filter(Water.participant_id == participant_id)
+        .order_by(Water.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    urine_entries = (
+        Urine.query.filter(Urine.participant_id == participant_id)
+        .order_by(Urine.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    diaper_entries = (
+        Diaper.query.filter(Diaper.participant_id == participant_id)
+        .order_by(Diaper.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    merged_entries = [
+        {
+            "id": entry.id,
+            "kind": "water",
+            "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            "meal": entry.meal,
+            "amount": None,
+            "weight": None,
+            "note": None,
+        }
+        for entry in water_entries
+    ] + [
+        {
+            "id": entry.id,
+            "kind": "urine",
+            "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            "meal": None,
+            "amount": entry.amount,
+            "weight": None,
+            "note": entry.note,
+        }
+        for entry in urine_entries
+    ] + [
+        {
+            "id": entry.id,
+            "kind": "diaper",
+            "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            "meal": None,
+            "amount": None,
+            "weight": entry.weight,
+            "note": entry.note,
+        }
+        for entry in diaper_entries
+    ]
+
+    merged_entries.sort(key=lambda entry: entry.get("created_at") or "", reverse=True)
+
+    return jsonify({"entries": merged_entries[:limit]})
+
+
+@api_bp.get("/recentEntries")
+@require_auth
+def recent_entries():
+    try:
+        limit = int(request.args.get("limit", 100))
+    except (TypeError, ValueError):
+        return jsonify({"error": "limit must be an integer."}), 400
+
+    if limit < 1:
+        return jsonify({"error": "limit must be greater than 0."}), 400
+
+    limit = min(limit, 300)
+
+    water_entries = Water.query.order_by(Water.created_at.desc()).limit(limit).all()
+    urine_entries = Urine.query.order_by(Urine.created_at.desc()).limit(limit).all()
+    diaper_entries = Diaper.query.order_by(Diaper.created_at.desc()).limit(limit).all()
+
+    participant_ids = {
+        entry.participant_id for entry in water_entries + urine_entries + diaper_entries
+    }
+    participants = Participant.query.filter(Participant.id.in_(participant_ids)).all() if participant_ids else []
+    participant_by_id = {
+        participant.id: participant
+        for participant in participants
+    }
+
+    merged_entries = [
+        {
+            "id": entry.id,
+            "kind": "water",
+            "participant_id": entry.participant_id,
+            "participant_name": participant_by_id.get(entry.participant_id).name
+            if participant_by_id.get(entry.participant_id)
+            else "Unknown",
+            "participant_last_name": participant_by_id.get(entry.participant_id).last_name
+            if participant_by_id.get(entry.participant_id)
+            else "",
+            "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            "meal": entry.meal,
+            "amount": None,
+            "weight": None,
+            "note": None,
+        }
+        for entry in water_entries
+    ] + [
+        {
+            "id": entry.id,
+            "kind": "urine",
+            "participant_id": entry.participant_id,
+            "participant_name": participant_by_id.get(entry.participant_id).name
+            if participant_by_id.get(entry.participant_id)
+            else "Unknown",
+            "participant_last_name": participant_by_id.get(entry.participant_id).last_name
+            if participant_by_id.get(entry.participant_id)
+            else "",
+            "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            "meal": None,
+            "amount": entry.amount,
+            "weight": None,
+            "note": entry.note,
+        }
+        for entry in urine_entries
+    ] + [
+        {
+            "id": entry.id,
+            "kind": "diaper",
+            "participant_id": entry.participant_id,
+            "participant_name": participant_by_id.get(entry.participant_id).name
+            if participant_by_id.get(entry.participant_id)
+            else "Unknown",
+            "participant_last_name": participant_by_id.get(entry.participant_id).last_name
+            if participant_by_id.get(entry.participant_id)
+            else "",
+            "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            "meal": None,
+            "amount": None,
+            "weight": entry.weight,
+            "note": entry.note,
+        }
+        for entry in diaper_entries
+    ]
+
+    merged_entries.sort(key=lambda entry: entry.get("created_at") or "", reverse=True)
+
+    return jsonify({"entries": merged_entries[:limit]})
+
+
+def _entry_model_for_kind(kind: str):
+    if kind == "water":
+        return Water
+    if kind == "urine":
+        return Urine
+    if kind == "diaper":
+        return Diaper
+    return None
+
+
+@api_bp.patch("/entry/<string:kind>/<int:entry_id>")
+@require_auth
+def update_entry(kind: str, entry_id: int):
+    model = _entry_model_for_kind(kind)
+    if model is None:
+        return jsonify({"error": "Unsupported entry kind."}), 400
+
+    entry = db.session.get(model, entry_id)
+    if entry is None:
+        return jsonify({"error": "Entry not found."}), 404
+
+    payload = request.get_json(silent=True) or {}
+
+    if kind == "water":
+        if "meal" in payload:
+            entry.meal = bool(payload.get("meal"))
+
+    if kind == "urine":
+        if "amount" in payload:
+            try:
+                amount = int(payload.get("amount"))
+            except (TypeError, ValueError):
+                return jsonify({"error": "amount must be an integer."}), 400
+            if amount < 0:
+                return jsonify({"error": "amount must be zero or greater."}), 400
+            entry.amount = amount
+
+        if "note" in payload:
+            note = str(payload.get("note", "")).strip() or None
+            entry.note = note
+
+    if kind == "diaper":
+        if "weight" in payload:
+            try:
+                weight = int(payload.get("weight"))
+            except (TypeError, ValueError):
+                return jsonify({"error": "weight must be an integer."}), 400
+            if weight < 0:
+                return jsonify({"error": "weight must be zero or greater."}), 400
+            entry.weight = weight
+
+        if "note" in payload:
+            note = str(payload.get("note", "")).strip() or None
+            entry.note = note
+
+    db.session.commit()
+    return jsonify({"message": "Entry updated successfully."})
+
+
+@api_bp.delete("/entry/<string:kind>/<int:entry_id>")
+@require_auth
+def delete_entry(kind: str, entry_id: int):
+    model = _entry_model_for_kind(kind)
+    if model is None:
+        return jsonify({"error": "Unsupported entry kind."}), 400
+
+    entry = db.session.get(model, entry_id)
+    if entry is None:
+        return jsonify({"error": "Entry not found."}), 404
+
+    db.session.delete(entry)
+    db.session.commit()
+    return jsonify({"message": "Entry deleted successfully."})
+
 @api_bp.post("/excelParticipantsCounselors")
 @require_auth
 def excel_participants_counselors():
