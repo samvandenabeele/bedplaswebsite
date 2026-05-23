@@ -34,7 +34,7 @@ services:
     build:
       context: ./frontend
       tags:
-        - ghcr.io/samvandenabeele/bedplaswebsite-backend:latest
+        - ghcr.io/samvandenabeele/bedplaswebsite-frontend:latest
     depends_on:
       backend:
         condition: service_started
