@@ -831,7 +831,7 @@ function PageAdmin() {
                   className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
                 />
                 <div className="min-w-52">
-                  <CustomSelect
+                  <CustomSelect<"all" | RecentEntry["kind"]>
                     value={recentEntryTypeFilter}
                     onChange={(next) =>
                       setRecentEntryTypeFilter(

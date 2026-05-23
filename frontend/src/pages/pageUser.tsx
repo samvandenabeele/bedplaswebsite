@@ -386,7 +386,7 @@ function PageUser() {
             <label className="flex-1 space-y-2">
               <span className="text-sm font-medium text-slate-200">Kind</span>
               {/* CustomSelect provides fully-styled options that match the site */}
-              <CustomSelect
+              <CustomSelect<number>
                 value={selectedParticipantId}
                 onChange={(next) => setSelectedParticipantId(next)}
                 options={participants.map((p) => ({
@@ -636,7 +636,7 @@ function PageUser() {
             <label className="flex items-center gap-2 text-sm text-slate-300">
               <span>Type</span>
               <div className="min-w-44">
-                <CustomSelect
+                <CustomSelect<"all" | ParticipantRecentEntry["kind"]>
                   value={recentEntryTypeFilter}
                   onChange={(next) =>
                     setRecentEntryTypeFilter(

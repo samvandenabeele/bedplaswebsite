@@ -1,23 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 
 type OptionValue = string | number;
-type Option = { id: OptionValue; label: string };
 
-type Props = {
-  value: OptionValue | "";
-  onChange: (next: OptionValue | "") => void;
-  options: Option[];
+type Option<T extends OptionValue> = { id: T; label: string };
+
+type Props<T extends OptionValue> = {
+  value: T | "";
+  onChange: (next: T | "") => void;
+  options: Option<T>[];
   placeholder?: string;
   disabled?: boolean;
 };
 
-export default function CustomSelect({
+export default function CustomSelect<T extends OptionValue>({
   value,
   onChange,
   options,
   placeholder = "Selecteer",
   disabled = false,
-}: Props) {
+}: Props<T>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
