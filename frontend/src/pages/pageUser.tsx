@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import {
+  addClock,
+  addClockUse,
   addDiaper,
   deleteEntry,
   getParticipantRecentEntries,
@@ -13,6 +15,18 @@ import {
 } from "../api";
 import CustomSelect from "../components/CustomSelect";
 
+const URINE_NOTE_OPTIONS = [
+  "Op toilet",
+  "Druppels",
+  "Vlekje in onderbroek",
+  "Onderbroek nat",
+  "Bovenkleding nat",
+  "Kousen nat",
+  "Bovenkleding en kousen nat",
+  "Variërend (druppels tot natte broek)",
+  "Variërend (natte broek tot bovenkleding nat)",
+];
+
 function PageUser() {
   const [participants, setParticipants] = useState<ParticipantSummary[]>([]);
   const [selectedParticipantId, setSelectedParticipantId] = useState<
@@ -20,7 +34,7 @@ function PageUser() {
   >("");
   const [loadingParticipants, setLoadingParticipants] = useState(true);
   const [submitting, setSubmitting] = useState<
-    "water" | "urine" | "diaper" | null
+    "water" | "urine" | "diaper" | "clock" | "clockUse" | null
   >(null);
   const [recentEntries, setRecentEntries] = useState<ParticipantRecentEntry[]>(
     [],
@@ -106,7 +120,9 @@ function PageUser() {
     void loadRecentEntries(selectedParticipant.id);
   }, [selectedParticipant, selectedParticipantId]);
 
-  async function submitEntry(kind: "water" | "urine" | "diaper") {
+  async function submitEntry(
+    kind: "water" | "urine" | "diaper" | "clock" | "clockUse",
+  ) {
     if (!selectedParticipant) {
       setError("Kies eerst een kind.");
       return;
@@ -149,6 +165,22 @@ function PageUser() {
         setMessage(`Luier toegevoegd voor ${selectedParticipant.name}.`);
       }
 
+      if (kind === "clock") {
+        await addClock({
+          participant_id: selectedParticipant.id,
+          name: selectedParticipant.name,
+          last_name: selectedParticipant.name,
+        });
+      }
+
+      if (kind === "clockUse") {
+        await addClockUse({
+          participant_id: selectedParticipant.id,
+          name: selectedParticipant.name,
+          last_name: selectedParticipant.name,
+        });
+      }
+
       await loadParticipants();
       await loadRecentEntries(selectedParticipant.id);
     } catch (submitError) {
@@ -187,6 +219,10 @@ function PageUser() {
       return "Plas";
     }
 
+    if (kind === "clock") {
+      return "Plaswekker";
+    }
+
     return "Luier";
   }
 
@@ -197,6 +233,10 @@ function PageUser() {
 
     if (entry.kind === "urine") {
       return `${entry.amount ?? 0} ml`;
+    }
+
+    if (entry.kind === "clock") {
+      return "Plaswekker gebruikt";
     }
 
     return `${entry.weight ?? 0} g`;
@@ -266,6 +306,13 @@ function PageUser() {
           id: entry.id,
           weight: Math.trunc(nextWeight),
           note: editDraft.note,
+        });
+      }
+
+      if (entry.kind === "clock") {
+        await updateEntry({
+          kind: "clock",
+          id: entry.id,
         });
       }
 
@@ -466,13 +513,18 @@ function PageUser() {
                 <span className="text-sm font-medium text-slate-200">
                   Opmerking
                 </span>
-                <textarea
-                  value={urineNote}
-                  onChange={(event) => setUrineNote(event.target.value)}
-                  rows={3}
-                  placeholder="Bijv. ongelukje"
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
-                />
+                <div className="min-w-0">
+                  <CustomSelect<string>
+                    value={urineNote}
+                    onChange={(next) => setUrineNote(next)}
+                    options={URINE_NOTE_OPTIONS.map((o) => ({
+                      id: o,
+                      label: o,
+                    }))}
+                    placeholder="Selecteer een opmerking"
+                    disabled={!selectedParticipant}
+                  />
+                </div>
               </label>
 
               <button
@@ -618,6 +670,47 @@ function PageUser() {
               </div>
             </form>
           </div>
+          {/* form for plaswekkers */}
+          <form
+            className="flex h-full w-full flex-col rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-fuchsia-950/20 sm:p-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitEntry("clock");
+            }}
+          >
+            <div>
+              <h3 className="text-lg font-semibold text-white">Plaswekker</h3>
+              <p className="mt-1 text-sm text-slate-400"></p>
+            </div>
+
+            <div className="mt-auto flex flex-col gap-4">
+              <label className="space-y-2 block">
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={
+                      selectedParticipant ? selectedParticipant.clock : false
+                    }
+                    onChange={(event) => {
+                      // Toggle plaswekker use`
+                      event.preventDefault();
+                      submitEntry("clockUse");
+                    }}
+                    className="h-4 w-4 rounded border-white/20 bg-white/10 accent-emerald-400"
+                  />
+                  plaswekker gebruikt
+                </label>
+              </label>
+
+              <button
+                type="submit"
+                disabled={submitting === "clock" || !selectedParticipant}
+                className="w-full rounded-2xl bg-fuchsia-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-fuchsia-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting === "clock" ? "Bezig..." : "Plaswekker opslaan"}
+              </button>
+            </div>
+          </form>
         </div>
 
         <div className="mt-6 rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-slate-950/20 sm:p-5">
@@ -647,6 +740,7 @@ function PageUser() {
                     { id: "all", label: "Alles" },
                     { id: "water", label: "Water" },
                     { id: "urine", label: "Plas" },
+                    { id: "clock", label: "Plaswekker" },
                     { id: "diaper", label: "Luier" },
                   ]}
                 />
@@ -715,6 +809,10 @@ function PageUser() {
                                 />
                                 Bij maaltijd
                               </label>
+                            ) : entry.kind === "clock" ? (
+                              <span className="text-slate-400">
+                                Plaswekker gebruikt
+                              </span>
                             ) : (
                               <input
                                 type="number"
@@ -741,7 +839,7 @@ function PageUser() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-between gap-3">
-                            {isEditing && entry.kind !== "water" ? (
+                            {isEditing && entry.kind !== "water" && entry.kind !== "clock" ? (
                               <input
                                 type="text"
                                 value={editDraft.note}

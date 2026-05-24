@@ -40,6 +40,14 @@ class Participant(db.Model):
     empty_diaper = db.Column(db.Integer, nullable=False, default=0)
     note = db.Column(db.Text, nullable=True)
 
+
+def default_empty_weight(context):
+    participant_id = context.get_current_parameters().get("participant_id")
+    if participant_id is None:
+        return 0
+    participant = db.session.get(Participant, participant_id)
+    return participant.empty_diaper if participant and participant.empty_diaper is not None else 0
+
 class Water(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
@@ -57,5 +65,16 @@ class Diaper(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
     weight = db.Column(db.Integer, nullable=False)
+    empty_weight = db.Column(db.Integer, nullable=False, default=default_empty_weight)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    note = db.Column(db.Text,nullable=True)
+    note = db.Column(db.Text, nullable=True)
+
+class Clock(db.Model):
+    id=db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+class ClockUse(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))

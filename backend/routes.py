@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import Blueprint, current_app, g, jsonify, request
@@ -5,7 +6,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import Date, func, or_
 
 from extensions import db
-from models import User, Participant, Water, Urine, Diaper
+from models import User, Participant, Water, Urine, Diaper, ClockUse, Clock
 
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -184,6 +185,9 @@ def query_participant():
     
     participants = query.all()
     today = func.current_date()
+    now = datetime.now()
+    cutoff_date = now.date() if now.hour >= 18 else now.date() - timedelta(days=1)
+    six_pm_today = datetime.combine(cutoff_date, datetime.min.time()).replace(hour=18)
     
     return jsonify({
         "participants": [
@@ -210,6 +214,12 @@ def query_participant():
                 .filter(Urine.participant_id == p.id)
                 .scalar(),
                 "active": p.active,
+                "clock": db.session.query(func.count(ClockUse.id))
+                .filter(
+                    ClockUse.participant_id == p.id,
+                    ClockUse.created_at >= six_pm_today,
+                )
+                .scalar() % 2 == 1,
             }
             for p in participants
         ]
@@ -381,6 +391,12 @@ def participant_recent_entries(participant_id: int):
         .limit(limit)
         .all()
     )
+    clock_entries = (
+        Clock.query.filter(Clock.participant_id == participant_id)
+        .order_by(Clock.created_at.desc())
+        .limit(limit)
+        .all()
+    )
 
     merged_entries = [
         {
@@ -415,6 +431,13 @@ def participant_recent_entries(participant_id: int):
             "note": entry.note,
         }
         for entry in diaper_entries
+    ] + [
+        {
+            "id": entry.id,
+            "kind": "clock",
+            "created_at": entry.created_at.isoformat() if entry.created_at else None,
+        }
+        for entry in clock_entries
     ]
 
     merged_entries.sort(key=lambda entry: entry.get("created_at") or "", reverse=True)
@@ -696,3 +719,27 @@ def excel_participants_counselors():
         "participants_skipped": skipped_participants,
         "counselors_created": created_counselors,
     })
+
+@api_bp.post("addClock")
+@require_auth
+def add_clock():
+    payload = request.get_json(silent=True) or {}
+    id = int(payload.get("participant_id"))
+
+    new_clock = Clock(participant_id=id)
+    db.session.add(new_clock)
+    db.session.commit()
+
+    return jsonify({'message' : 'clock added', 'participant_id': id})
+
+@api_bp.post("addClockUse")
+@require_auth
+def add_clock_use():
+    payload = request.get_json(silent=True) or {}
+    id = int(payload.get("participant_id"))
+
+    new_clock_use = ClockUse(participant_id=id)
+    db.session.add(new_clock_use)
+    db.session.commit()
+
+    return jsonify({'message' : 'clockUse added', 'participant_id': id})

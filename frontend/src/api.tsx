@@ -20,6 +20,7 @@ export type ParticipantSummary = {
   drank_today: number;
   peed_today: number;
   largest_pee: number;
+  clock: boolean;
 };
 
 export type CounselorSummary = {
@@ -96,6 +97,12 @@ export type DiaperPayload = {
   note?: string;
 };
 
+export type ClockPayload = {
+  participant_id?: number;
+  name: string;
+  last_name: string;
+};
+
 export type EmptyDiaperPayload = {
   participant_id: number;
   empty_diaper: number;
@@ -103,7 +110,7 @@ export type EmptyDiaperPayload = {
 
 export type ParticipantRecentEntry = {
   id: number;
-  kind: "water" | "urine" | "diaper";
+  kind: "water" | "urine" | "diaper" | "clock";
   created_at: string | null;
   meal: boolean | null;
   amount: number | null;
@@ -318,6 +325,20 @@ export function addUrine(payload: UrinePayload) {
 
 export function addDiaper(payload: DiaperPayload) {
   return request<void>("/addDiaper", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function addClock(payload: ClockPayload) {
+  return request<void>("/addClock", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function addClockUse(payload: ClockPayload) {
+  return request<void>("/addClockUse", {
     method: "POST",
     body: JSON.stringify(payload),
   });
