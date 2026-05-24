@@ -7,6 +7,7 @@ import {
   getParticipantRecentEntries,
   addUrine,
   addWater,
+  type AuthUser,
   queryParticipants,
   type ParticipantRecentEntry,
   updateEntry,
@@ -27,7 +28,11 @@ const URINE_NOTE_OPTIONS = [
   "Variërend (natte broek tot bovenkleding nat)",
 ];
 
-function PageUser() {
+type PageUserProps = {
+  currentUser: AuthUser | null;
+};
+
+function PageUser({ currentUser }: PageUserProps) {
   const [participants, setParticipants] = useState<ParticipantSummary[]>([]);
   const [selectedParticipantId, setSelectedParticipantId] = useState<
     number | ""
@@ -169,7 +174,7 @@ function PageUser() {
         await addClock({
           participant_id: selectedParticipant.id,
           name: selectedParticipant.name,
-          last_name: selectedParticipant.name,
+          last_name: selectedParticipant.last_name,
         });
       }
 
@@ -177,7 +182,7 @@ function PageUser() {
         await addClockUse({
           participant_id: selectedParticipant.id,
           name: selectedParticipant.name,
-          last_name: selectedParticipant.name,
+          last_name: selectedParticipant.last_name,
         });
       }
 
@@ -426,6 +431,11 @@ function PageUser() {
           <p className="text-sm text-slate-400">
             Kies eerst het kind, voeg daarna meteen water, plas of luier toe.
           </p>
+          {currentUser?.camp ? (
+            <div className="pt-1 text-xs text-cyan-200">
+              Huidig kamp: {currentUser.camp.name || currentUser.camp.code}
+            </div>
+          ) : null}
         </div>
 
         <div className="mb-5 rounded-3xl border border-white/10 bg-slate-950/55 p-3 shadow-lg shadow-slate-950/20 sm:p-5">
@@ -839,7 +849,9 @@ function PageUser() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-between gap-3">
-                            {isEditing && entry.kind !== "water" && entry.kind !== "clock" ? (
+                            {isEditing &&
+                            entry.kind !== "water" &&
+                            entry.kind !== "clock" ? (
                               <input
                                 type="text"
                                 value={editDraft.note}

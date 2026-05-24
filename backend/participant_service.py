@@ -6,15 +6,16 @@ from extensions import db
 from models import Participant, Water, Urine, ClockUse
 
 
-def resolve_participant(payload: dict):
+def resolve_participant(payload: dict, camp_id: int | None = None):
     participant_id = payload.get("participant_id")
     if participant_id is not None and str(participant_id).strip() != "":
         try:
             participant = db.session.get(Participant, int(participant_id))
         except (TypeError, ValueError):
             participant = None
-        if participant is not None:
+        if participant is not None and (camp_id is None or participant.camp_id == camp_id):
             return participant
+        return None
 
     name = str(payload.get("name", "")).strip()
     last_name = str(payload.get("last_name", "")).strip()
@@ -22,10 +23,14 @@ def resolve_participant(payload: dict):
     if not name or not last_name:
         return None
 
-    return Participant.query.filter(
+    query = Participant.query.filter(
         Participant.name == name,
         Participant.last_name == last_name,
-    ).first()
+    )
+    if camp_id is not None:
+        query = query.filter(Participant.camp_id == camp_id)
+
+    return query.first()
 
 
 def participant_activity_summary(p: Participant):
@@ -59,6 +64,9 @@ def participant_activity_summary(p: Participant):
         "last_name": p.last_name,
         "phone_1": p.phone_1,
         "phone_2": p.phone_2,
+        "camp_id": p.camp_id,
+        "camp_code": p.camp.code if getattr(p, "camp", None) is not None else None,
+        "camp_name": p.camp.name if getattr(p, "camp", None) is not None else None,
         "empty_diaper": p.empty_diaper,
         "drank_today": drank_today,
         "peed_today": peed_today,

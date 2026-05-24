@@ -1,5 +1,42 @@
+import re
+
 from extensions import db
-from models import Participant, User
+from models import Camp, Participant, User
+
+
+def _extract_camp_metadata(wb):
+    header = ""
+
+    for sheet_name in wb.sheetnames:
+        value = wb[sheet_name]["A1"].value
+        if value:
+            header = str(value).strip()
+            if header:
+                break
+
+    if not header:
+        return None
+
+    code_match = re.search(r"\(vakantiecode\s+([^)]+)\)\s*$", header, flags=re.IGNORECASE)
+    if code_match is None:
+        return None
+
+    code = code_match.group(1).strip()
+    name = re.sub(r"\s*\(vakantiecode\s+[^)]+\)\s*$", "", header, flags=re.IGNORECASE).strip() or None
+
+    camp = Camp.query.filter_by(code=code).first()
+    if camp is None:
+        camp = Camp(code=code, name=name, source_header=header)
+        db.session.add(camp)
+    else:
+        if name and not camp.name:
+            camp.name = name
+        if not camp.source_header:
+            camp.source_header = header
+
+    db.session.flush()
+
+    return camp
 
 
 def process_workbook(upload):
@@ -11,6 +48,8 @@ def process_workbook(upload):
 
     # upload is a FileStorage-like object
     wb = load_workbook(filename=upload, data_only=True)
+    camp = _extract_camp_metadata(wb)
+    camp_id = camp.id if camp is not None else None
 
     created_participants = 0
     skipped_participants = 0
@@ -46,14 +85,18 @@ def process_workbook(upload):
             existing = Participant.query.filter(
                 Participant.name == first,
                 Participant.last_name == last,
-            ).first()
+            )
+            if camp_id is not None:
+                existing = existing.filter(Participant.camp_id == camp_id)
+
+            existing = existing.first()
 
             if existing is None:
                 if not phone_1:
                     # require at least one phone to create
                     skipped_participants += 1
                 else:
-                    new_p = Participant(name=first, last_name=last, phone_1=phone_1, phone_2=phone_2)
+                    new_p = Participant(name=first, last_name=last, phone_1=phone_1, phone_2=phone_2, camp_id=camp_id)
                     db.session.add(new_p)
                     created_participants += 1
             row += 1
@@ -87,7 +130,7 @@ def process_workbook(upload):
                 # Only create if email or username not already present
                 if User.query.filter_by(email=email).first() is None and User.query.filter_by(username=username).first() is None:
                     pwd = secrets.token_urlsafe(10)
-                    u = User(username=username, email=email or None)
+                    u = User(username=username, email=email or None, camp_id=camp_id)
                     u.set_password(pwd)
                     db.session.add(u)
                     created_counselors.append({"username": username, "email": email, "password": pwd})

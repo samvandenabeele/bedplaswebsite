@@ -8,11 +8,16 @@ import {
 import {
   addParticipant,
   deleteEntry,
+  createCamp,
+  getCamps,
   getRecentEntries,
   queryParticipants,
   register,
   updateEntry,
+  updateCamp,
   uploadParticipantsCounselorsExcel,
+  type AuthUser,
+  type CampSummary,
   type ParticipantSummary,
   queryCounselors,
   type CounselorSummary,
@@ -20,7 +25,11 @@ import {
 } from "../api";
 import CustomSelect from "../components/CustomSelect";
 
-function AdminSections() {
+type AdminSectionsProps = {
+  currentUser: AuthUser | null;
+};
+
+function AdminSections({ currentUser }: AdminSectionsProps) {
   const [participants, setParticipants] = useState<ParticipantSummary[]>([]);
   const [isLoadingParticipants, setIsLoadingParticipants] = useState(true);
   const [participantError, setParticipantError] = useState<string | null>(null);
@@ -55,6 +64,22 @@ function AdminSections() {
   >("all");
   const [recentEntryParticipantFilter, setRecentEntryParticipantFilter] =
     useState("");
+  const [camps, setCamps] = useState<CampSummary[]>([]);
+  const [isLoadingCamps, setIsLoadingCamps] = useState(true);
+  const [campError, setCampError] = useState<string | null>(null);
+  const [campStatus, setCampStatus] = useState<string | null>(null);
+  const [campActionKey, setCampActionKey] = useState<string | null>(null);
+  const [selectedParticipantCampId, setSelectedParticipantCampId] = useState<
+    number | ""
+  >(currentUser?.camp_id ?? "");
+  const [selectedAccountCampId, setSelectedAccountCampId] = useState<
+    number | ""
+  >(currentUser?.camp_id ?? "");
+  const [campForm, setCampForm] = useState({
+    code: "",
+    name: "",
+    source_header: "",
+  });
 
   const [participantForm, setParticipantForm] = useState({
     name: "",
@@ -87,8 +112,71 @@ function AdminSections() {
     }
   }
 
+  async function loadCamps() {
+    setIsLoadingCamps(true);
+    setCampError(null);
+
+    try {
+      const response = await getCamps();
+      setCamps(response.camps);
+      const defaultCampId = currentUser?.camp_id ?? response.camps[0]?.id ?? "";
+      setSelectedParticipantCampId(defaultCampId);
+      setSelectedAccountCampId(defaultCampId);
+    } catch (error) {
+      setCampError(
+        error instanceof Error ? error.message : "Failed to load camps.",
+      );
+    } finally {
+      setIsLoadingCamps(false);
+    }
+  }
+
+  async function handleCampSubmit(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCampError(null);
+    setCampStatus(null);
+
+    try {
+      await createCamp({
+        code: campForm.code.trim(),
+        name: campForm.name.trim() || undefined,
+        source_header: campForm.source_header.trim() || undefined,
+      });
+
+      setCampStatus("Camp created successfully.");
+      setCampForm({ code: "", name: "", source_header: "" });
+      await loadCamps();
+    } catch (error) {
+      setCampError(
+        error instanceof Error ? error.message : "Failed to create camp.",
+      );
+    }
+  }
+
+  async function handleCampToggleActive(camp: CampSummary) {
+    const rowKey = `camp-${camp.id}`;
+    setCampActionKey(rowKey);
+    setCampError(null);
+    setCampStatus(null);
+
+    try {
+      await updateCamp(camp.id, { active: !camp.active });
+      setCampStatus(
+        `${camp.code} is now ${camp.active ? "inactive" : "active"}.`,
+      );
+      await loadCamps();
+    } catch (error) {
+      setCampError(
+        error instanceof Error ? error.message : "Failed to update camp.",
+      );
+    } finally {
+      setCampActionKey(null);
+    }
+  }
+
   useEffect(() => {
     void loadParticipants();
+    void loadCamps();
   }, []);
 
   async function loadCounselors() {
@@ -138,6 +226,7 @@ function AdminSections() {
       loadParticipants(),
       loadCounselors(),
       loadRecentEntries(),
+      loadCamps(),
     ]);
   }
 
@@ -155,6 +244,10 @@ function AdminSections() {
         phone_1: participantForm.phone_1.trim(),
         phone_2: participantForm.phone_2.trim() || undefined,
         empty_diaper: Number(participantForm.empty_diaper) || 0,
+        camp_id:
+          selectedParticipantCampId === ""
+            ? undefined
+            : selectedParticipantCampId,
       });
 
       setParticipantStatus("Participant added successfully.");
@@ -187,6 +280,8 @@ function AdminSections() {
         username: accountForm.username.trim(),
         email: accountForm.email.trim() || undefined,
         password: accountForm.password,
+        camp_id:
+          selectedAccountCampId === "" ? undefined : selectedAccountCampId,
       });
 
       setAccountStatus("User account created successfully.");
@@ -425,6 +520,177 @@ function AdminSections() {
           </button>
         </div>
 
+        {campError ? (
+          <div className="mb-6 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+            {campError}
+          </div>
+        ) : null}
+
+        {campStatus ? (
+          <div className="mb-6 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+            {campStatus}
+          </div>
+        ) : null}
+
+        <section className="mb-6 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 shadow-lg shadow-cyan-950/20">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-5 py-4 sm:px-6 sm:py-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold text-white">
+                  Camp management
+                </h3>
+                <p className="text-sm text-slate-400">
+                  Create camps and review how many counselors and participants
+                  belong to each one.
+                </p>
+              </div>
+
+              <div className="text-sm text-slate-300">
+                {currentUser?.camp ? (
+                  <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1.5 text-cyan-100">
+                    Camp-scoped user:{" "}
+                    {currentUser.camp.name || currentUser.camp.code}
+                  </span>
+                ) : (
+                  <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-emerald-100">
+                    Global admin access
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-6 border-b border-white/10 px-5 py-5 sm:px-6 lg:grid-cols-[0.95fr_1.05fr]">
+            <form className="space-y-4" onSubmit={handleCampSubmit}>
+              <div>
+                <h4 className="text-base font-semibold text-white">New camp</h4>
+                <p className="text-sm text-slate-400">
+                  Add a camp manually when it is not coming from an upload.
+                </p>
+              </div>
+
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium text-slate-200">Code</span>
+                <input
+                  value={campForm.code}
+                  onChange={(event) =>
+                    setCampForm((current) => ({
+                      ...current,
+                      code: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                  placeholder="2614526001"
+                  required
+                />
+              </label>
+
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium text-slate-200">Name</span>
+                <input
+                  value={campForm.name}
+                  onChange={(event) =>
+                    setCampForm((current) => ({
+                      ...current,
+                      name: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                  placeholder="Optional camp name"
+                />
+              </label>
+
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium text-slate-200">
+                  Source header
+                </span>
+                <textarea
+                  value={campForm.source_header}
+                  onChange={(event) =>
+                    setCampForm((current) => ({
+                      ...current,
+                      source_header: event.target.value,
+                    }))
+                  }
+                  rows={3}
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                  placeholder="Optional A1 workbook text"
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={currentUser?.camp_id !== null}
+                className="rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+              >
+                Create camp
+              </button>
+            </form>
+
+            <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
+              {isLoadingCamps ? (
+                <div className="px-5 py-8 text-sm text-slate-300">
+                  Loading camps...
+                </div>
+              ) : camps.length === 0 ? (
+                <div className="px-5 py-8 text-sm text-slate-300">
+                  No camps found.
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-white/10 text-left text-sm text-slate-200">
+                  <thead className="bg-white/5 text-[0.7rem] uppercase tracking-[0.16em] text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Code</th>
+                      <th className="px-4 py-3 font-medium">Name</th>
+                      <th className="px-4 py-3 font-medium">People</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {camps.map((camp) => {
+                      const rowKey = `camp-${camp.id}`;
+                      const isBusy = campActionKey === rowKey;
+                      return (
+                        <tr key={camp.id} className="hover:bg-white/3">
+                          <td className="px-4 py-3 font-medium text-white">
+                            {camp.code}
+                          </td>
+                          <td className="px-4 py-3 text-slate-300">
+                            {camp.name || "-"}
+                            {camp.source_header ? (
+                              <div className="mt-1 max-w-72 truncate text-xs text-slate-500">
+                                {camp.source_header}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3 text-slate-300">
+                            <div>{camp.participant_count} participants</div>
+                            <div>{camp.counselor_count} counselors</div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-300">
+                            {camp.active ? "Active" : "Inactive"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleCampToggleActive(camp)}
+                              disabled={isBusy || currentUser?.camp_id !== null}
+                              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {camp.active ? "Deactivate" : "Activate"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </section>
+
         <div className="grid items-start gap-6 xl:grid-cols-[1.05fr_0.95fr]">
           <form
             className="h-fit self-start rounded-[1.75rem] border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-cyan-950/20 sm:p-6"
@@ -532,6 +798,24 @@ function AdminSections() {
                   min="0"
                 />
               </label>
+
+              <label className="space-y-2 sm:col-span-2">
+                <span className="text-sm font-medium text-slate-200">Camp</span>
+                <CustomSelect<number>
+                  value={selectedParticipantCampId}
+                  onChange={(next) => setSelectedParticipantCampId(next)}
+                  options={camps.map((camp) => ({
+                    id: camp.id,
+                    label: camp.name
+                      ? `${camp.name} (${camp.code})`
+                      : camp.code,
+                  }))}
+                  placeholder={
+                    isLoadingCamps ? "Loading camps..." : "Select a camp"
+                  }
+                  disabled={isLoadingCamps || currentUser?.camp_id !== null}
+                />
+              </label>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-3">
@@ -605,6 +889,24 @@ function AdminSections() {
                   placeholder="you@example.com"
                   autoComplete="email"
                   type="email"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-200">Camp</span>
+                <CustomSelect<number>
+                  value={selectedAccountCampId}
+                  onChange={(next) => setSelectedAccountCampId(next)}
+                  options={camps.map((camp) => ({
+                    id: camp.id,
+                    label: camp.name
+                      ? `${camp.name} (${camp.code})`
+                      : camp.code,
+                  }))}
+                  placeholder={
+                    isLoadingCamps ? "Loading camps..." : "Select a camp"
+                  }
+                  disabled={isLoadingCamps || currentUser?.camp_id !== null}
                 />
               </label>
 
@@ -694,6 +996,7 @@ function AdminSections() {
                   <tr>
                     <th className="px-4 py-3 font-medium sm:px-6">Name</th>
                     <th className="px-4 py-3 font-medium sm:px-6">email</th>
+                    <th className="px-4 py-3 font-medium sm:px-6">Camp</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -704,6 +1007,9 @@ function AdminSections() {
                       </td>
                       <td className="px-4 py-3 text-slate-300 sm:px-6">
                         {counselor.email}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 sm:px-6">
+                        {counselor.camp?.name || counselor.camp?.code || "-"}
                       </td>
                     </tr>
                   ))}
@@ -776,6 +1082,7 @@ function AdminSections() {
                 <thead className="bg-white/5 text-[0.7rem] uppercase tracking-[0.16em] text-slate-400">
                   <tr>
                     <th className="px-4 py-3 font-medium sm:px-6">Name</th>
+                    <th className="px-4 py-3 font-medium sm:px-6">Camp</th>
                     <th className="px-4 py-3 font-medium sm:px-6">Phone 1</th>
                     <th className="px-4 py-3 font-medium sm:px-6">Phone 2</th>
                     <th className="px-4 py-3 font-medium sm:px-6">
@@ -794,6 +1101,9 @@ function AdminSections() {
                     <tr key={participant.id} className="hover:bg-white/3">
                       <td className="px-4 py-3 font-medium text-white sm:px-6">
                         {participant.name} {participant.last_name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 sm:px-6">
+                        {participant.camp_name || participant.camp_code || "-"}
                       </td>
                       <td className="px-4 py-3 text-slate-300 sm:px-6">
                         {participant.phone_1}
@@ -883,6 +1193,7 @@ function AdminSections() {
                     <th className="px-4 py-3 font-medium sm:px-6">
                       Participant
                     </th>
+                    <th className="px-4 py-3 font-medium sm:px-6">Camp</th>
                     <th className="px-4 py-3 font-medium sm:px-6">Type</th>
                     <th className="px-4 py-3 font-medium sm:px-6">Details</th>
                     <th className="px-4 py-3 font-medium sm:px-6">Note</th>
@@ -902,6 +1213,11 @@ function AdminSections() {
                         </td>
                         <td className="px-4 py-3 font-medium text-white sm:px-6 whitespace-nowrap">
                           {entry.participant_name} {entry.participant_last_name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-300 sm:px-6 whitespace-nowrap">
+                          {entry.participant_camp_name ||
+                            entry.participant_camp_code ||
+                            "-"}
                         </td>
                         <td className="px-4 py-3 text-slate-300 sm:px-6 whitespace-nowrap">
                           {formatEntryType(entry.kind)}

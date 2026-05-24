@@ -87,7 +87,7 @@ function App() {
     return (
       <div className="min-h-screen text-slate-100">
         <div className="mx-auto flex min-h-screen w-full max-w-7xl items-center justify-center px-4 py-6 sm:px-6 lg:px-8">
-          <div className="rounded-[2rem] border border-white/10 bg-white/5 px-6 py-5 text-sm text-slate-300 shadow-2xl shadow-slate-950/40 backdrop-blur-xl">
+          <div className="rounded-4xl border border-white/10 bg-white/5 px-6 py-5 text-sm text-slate-300 shadow-2xl shadow-slate-950/40 backdrop-blur-xl">
             Checking session...
           </div>
         </div>
@@ -120,6 +120,11 @@ function App() {
                   {currentUser?.username}
                 </span>
               </p>
+              {currentUser?.camp ? (
+                <p className="mt-1 text-xs text-cyan-200 sm:text-sm">
+                  Camp: {currentUser.camp.name || currentUser.camp.code}
+                </p>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap items-center gap-2 md:justify-end">
@@ -157,7 +162,11 @@ function App() {
 
         <main className="flex flex-1 items-start justify-center pt-2 sm:items-center sm:pt-0">
           <div className="w-full max-w-5xl">
-            {activeView === "user" ? <PageUser /> : <PageAdmin />}
+            {activeView === "user" ? (
+              <PageUser currentUser={currentUser} />
+            ) : (
+              <PageAdmin currentUser={currentUser} />
+            )}
           </div>
         </main>
       </div>

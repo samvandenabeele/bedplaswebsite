@@ -41,6 +41,40 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
 
+        if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
+            existing_columns = {
+                row[1]
+                for row in db.session.execute(text("PRAGMA table_info(participant)"))
+            }
+            existing_user_columns = {
+                row[1]
+                for row in db.session.execute(text("PRAGMA table_info(user)"))
+            }
+            participant_columns = {
+                "date_added": "ALTER TABLE participant ADD COLUMN date_added DATETIME",
+                "active": "ALTER TABLE participant ADD COLUMN active BOOLEAN NOT NULL DEFAULT 1",
+                "empty_diaper": "ALTER TABLE participant ADD COLUMN empty_diaper INTEGER NOT NULL DEFAULT 0",
+                "note": "ALTER TABLE participant ADD COLUMN note TEXT",
+                "camp_id": "ALTER TABLE participant ADD COLUMN camp_id INTEGER",
+            }
+            user_columns = {
+                "camp_id": "ALTER TABLE user ADD COLUMN camp_id INTEGER",
+            }
+
+            added_column = False
+            for column_name, ddl in participant_columns.items():
+                if column_name not in existing_columns:
+                    db.session.execute(text(ddl))
+                    added_column = True
+
+            for column_name, ddl in user_columns.items():
+                if column_name not in existing_user_columns:
+                    db.session.execute(text(ddl))
+                    added_column = True
+
+            if added_column:
+                db.session.commit()
+
         # Create a default user from environment variables if provided.
         # This is useful for local development so an admin user exists.
         default_username = os.environ.get("DEFAULT_USER_USERNAME")
@@ -57,27 +91,6 @@ def create_app(config_class=Config):
                 db.session.add(user)
                 db.session.commit()
                 app.logger.info("Created default user '%s'", default_username)
-
-        if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
-            existing_columns = {
-                row[1]
-                for row in db.session.execute(text("PRAGMA table_info(participant)"))
-            }
-            participant_columns = {
-                "date_added": "ALTER TABLE participant ADD COLUMN date_added DATETIME",
-                "active": "ALTER TABLE participant ADD COLUMN active BOOLEAN NOT NULL DEFAULT 1",
-                "empty_diaper": "ALTER TABLE participant ADD COLUMN empty_diaper INTEGER NOT NULL DEFAULT 0",
-                "note": "ALTER TABLE participant ADD COLUMN note TEXT",
-            }
-
-            added_column = False
-            for column_name, ddl in participant_columns.items():
-                if column_name not in existing_columns:
-                    db.session.execute(text(ddl))
-                    added_column = True
-
-            if added_column:
-                db.session.commit()
 
     return app
 

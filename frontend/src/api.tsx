@@ -3,6 +3,19 @@ export type AuthUser = {
   username: string;
   email: string | null;
   created_at: string;
+  camp_id: number | null;
+  camp: CampSummary | null;
+};
+
+export type CampSummary = {
+  id: number;
+  code: string;
+  name: string | null;
+  source_header: string | null;
+  created_at: string;
+  active: boolean;
+  participant_count: number;
+  counselor_count: number;
 };
 
 export type AuthResponse = {
@@ -16,6 +29,9 @@ export type ParticipantSummary = {
   last_name: string;
   phone_1: string;
   phone_2: string | null;
+  camp_id: number | null;
+  camp_code: string | null;
+  camp_name: string | null;
   empty_diaper: number;
   drank_today: number;
   peed_today: number;
@@ -27,6 +43,8 @@ export type CounselorSummary = {
   id: number;
   username: string;
   email: string | null;
+  camp_id: number | null;
+  camp: CampSummary | null;
 };
 
 export type ExcelCounselorAccount = {
@@ -41,6 +59,20 @@ export type ExcelParticipantsCounselorsResponse = {
   counselors_created: ExcelCounselorAccount[];
 };
 
+export type CampsResponse = {
+  camps: CampSummary[];
+};
+
+export type CampPayload = {
+  code: string;
+  name?: string;
+  source_header?: string;
+};
+
+export type UpdateCampPayload = Partial<CampPayload> & {
+  active?: boolean;
+};
+
 export type ApiError = {
   error: string;
 };
@@ -49,6 +81,7 @@ export type RegisterPayload = {
   username: string;
   email?: string;
   password: string;
+  camp_id?: number;
 };
 
 export type LoginPayload = {
@@ -64,6 +97,7 @@ export type ParticipantPayload = {
   phone_1: string;
   phone_2?: string;
   empty_diaper?: number;
+  camp_id?: number;
 };
 
 export type ParticipantQuery = Partial<
@@ -122,6 +156,9 @@ export type RecentEntry = ParticipantRecentEntry & {
   participant_id: number;
   participant_name: string;
   participant_last_name: string;
+  participant_camp_id: number | null;
+  participant_camp_code: string | null;
+  participant_camp_name: string | null;
 };
 
 export type EntryKind = ParticipantRecentEntry["kind"];
@@ -266,6 +303,24 @@ export function logout() {
 
 export function me() {
   return request<{ user: AuthUser }>("/auth/me", { method: "GET" });
+}
+
+export function getCamps() {
+  return request<CampsResponse>("/camps", { method: "GET" });
+}
+
+export function createCamp(payload: CampPayload) {
+  return request<{ camp: CampSummary }>("/camps", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateCamp(campId: number, payload: UpdateCampPayload) {
+  return request<{ camp: CampSummary }>(`/camps/${campId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function addParticipant(payload: ParticipantPayload) {
