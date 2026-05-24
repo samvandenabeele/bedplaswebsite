@@ -45,3 +45,47 @@ def require_auth(view_func):
         return view_func(*args, **kwargs)
 
     return wrapper
+
+
+def require_superuser(view_func):
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        # Ensure authentication (if not already set by require_auth)
+        if getattr(g, "current_user", None) is None:
+            auth_header = request.headers.get("Authorization", "")
+            token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
+            if not token:
+                return jsonify({"error": "Authorization token required."}), 401
+            user = get_user_from_token(token)
+            if user is None:
+                return jsonify({"error": "Invalid or expired token."}), 401
+            g.current_user = user
+        user = g.current_user
+        if not getattr(user, "is_superuser", False) and not getattr(user, "is_admin", False):
+            return jsonify({"error": "Superuser or admin privileges required."}), 403
+
+        return view_func(*args, **kwargs)
+
+    return wrapper
+
+
+def require_admin(view_func):
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if getattr(g, "current_user", None) is None:
+            auth_header = request.headers.get("Authorization", "")
+            token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
+            if not token:
+                return jsonify({"error": "Authorization token required."}), 401
+            user = get_user_from_token(token)
+            if user is None:
+                return jsonify({"error": "Invalid or expired token."}), 401
+            g.current_user = user
+
+        user = g.current_user
+        if not getattr(user, "is_admin", False):
+            return jsonify({"error": "Admin privileges required."}), 403
+
+        return view_func(*args, **kwargs)
+
+    return wrapper

@@ -2,6 +2,7 @@ export type AuthUser = {
   id: number;
   username: string;
   email: string | null;
+  role: string;
   created_at: string;
   camp_id: number | null;
   camp: CampSummary | null;
@@ -43,6 +44,7 @@ export type CounselorSummary = {
   id: number;
   username: string;
   email: string | null;
+  role?: string;
   camp_id: number | null;
   camp: CampSummary | null;
 };
@@ -83,6 +85,8 @@ export type RegisterPayload = {
   password: string;
   camp_id?: number;
 };
+
+export type CreateUserPayload = RegisterPayload & { role?: string };
 
 export type LoginPayload = {
   identifier?: string;
@@ -278,6 +282,13 @@ export function healthCheck() {
 
 export function register(payload: RegisterPayload) {
   return request<AuthResponse>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createUser(payload: CreateUserPayload) {
+  return request<{ user: AuthUser }>("/users", {
     method: "POST",
     body: JSON.stringify(payload),
   });

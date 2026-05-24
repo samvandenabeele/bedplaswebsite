@@ -71,7 +71,11 @@ def _camp_for_user_payload(payload: dict):
 
 
 def _require_global_admin():
-    return _current_camp_id() is None
+    # Global admin is a user with role 'admin'
+    current_user = getattr(g, "current_user", None)
+    if current_user is None:
+        return False
+    return getattr(current_user, "is_admin", False)
 
 @api_bp.get("/health")
 def health_check():
@@ -94,6 +98,7 @@ def register():
     if email and User.query.filter_by(email=email).first() is not None:
         return jsonify({"error": "Email already exists."}), 409
 
+    # Always create regular users via the public register endpoint
     camp, camp_error = _camp_for_user_payload(payload)
     if camp_error is not None:
         return jsonify({"error": camp_error}), 400
@@ -248,6 +253,52 @@ def add_participants():
 
     return jsonify({"message": "Participant added successfully.", "name": name}), 201
 
+
+@api_bp.post("/users")
+@require_auth
+def create_user():
+    """Create a new user. Admins may create users with any role. Superusers may create regular users scoped to their camp."""
+    payload = request.get_json(silent=True) or {}
+    username = str(payload.get("username", "")).strip().lower()
+    email = str(payload.get("email", "")).strip().lower() or None
+    password = str(payload.get("password", ""))
+    role = str(payload.get("role", "user")).strip().lower() or "user"
+
+    if not username or not password:
+        return jsonify({"error": "username and password are required."}), 400
+
+    if User.query.filter_by(username=username).first() is not None:
+        return jsonify({"error": "Username already exists."}), 409
+
+    if email and User.query.filter_by(email=email).first() is not None:
+        return jsonify({"error": "Email already exists."}), 409
+
+    current_user = g.current_user
+
+    # Only admins can create superusers or admin accounts
+    if role in ("superuser", "admin") and not getattr(current_user, "is_admin", False):
+        return jsonify({"error": "Only admins can create superuser or admin accounts."}), 403
+
+    # Determine camp assignment
+    camp, camp_error = _camp_for_user_payload(payload)
+    if camp_error is not None:
+        return jsonify({"error": camp_error}), 400
+
+    # If the creator is a superuser (not admin), they may only create users for their own camp
+    if getattr(current_user, "is_superuser", False) and not getattr(current_user, "is_admin", False):
+        # ensure camp matches creator's camp
+        if camp is None and current_user.camp_id is not None:
+            camp = db.session.get(Camp, current_user.camp_id)
+        elif camp is not None and camp.id != current_user.camp_id:
+            return jsonify({"error": "Superusers may only create accounts for their own camp."}), 403
+
+    new_user = User(username=username, email=email, camp_id=camp.id if camp is not None else None, role=role)
+    new_user.set_password(password)
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({"user": new_user.to_dict()}), 201
+
 @api_bp.route("/delParticipant", methods=["POST"])
 @require_auth
 def del_participant():
@@ -316,6 +367,7 @@ def query_counselor():
                 "id": c.id,
                 "username": c.username,
                 "email": c.email,
+                "role": getattr(c, "role", "user"),
                 "active": c.active,
                 "camp_id": c.camp_id,
                 "camp": c.camp.to_dict() if getattr(c, "camp", None) is not None else None,

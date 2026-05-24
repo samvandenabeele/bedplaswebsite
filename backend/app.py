@@ -3,6 +3,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from config import Config
 from extensions import db, migrate
@@ -59,6 +60,8 @@ def create_app(config_class=Config):
             }
             user_columns = {
                 "camp_id": "ALTER TABLE user ADD COLUMN camp_id INTEGER",
+                # role column for role-based permissions; default to 'user' for existing rows
+                "role": "ALTER TABLE user ADD COLUMN role TEXT NOT NULL DEFAULT 'user'",
             }
 
             added_column = False
@@ -82,15 +85,39 @@ def create_app(config_class=Config):
         default_email = os.environ.get("DEFAULT_USER_EMAIL")
 
         if default_username and default_password:
-            from models import User
+            try:
+                from models import User
 
-            existing = User.query.filter_by(username=default_username).first()
-            if existing is None:
-                user = User(username=default_username, email=default_email or None)
-                user.set_password(default_password)
-                db.session.add(user)
-                db.session.commit()
-                app.logger.info("Created default user '%s'", default_username)
+                # Default the bootstrap account to admin unless an explicit role is provided.
+                default_role = os.environ.get("DEFAULT_USER_ROLE", "admin")
+
+                existing = User.query.filter_by(username=default_username).first()
+                if existing is None:
+                    user = User(username=default_username, email=default_email or None)
+                    user.set_password(default_password)
+                    # set role if model supports it
+                    try:
+                        user.role = default_role
+                    except Exception:
+                        # ignore if attribute missing
+                        pass
+                    db.session.add(user)
+                    db.session.commit()
+                    app.logger.info("Created default user '%s' with role '%s'", default_username, default_role)
+                elif getattr(existing, "role", None) != default_role:
+                    try:
+                        existing.role = default_role
+                    except Exception:
+                        pass
+                    db.session.commit()
+                    app.logger.info("Updated default user '%s' to role '%s'", default_username, default_role)
+            except OperationalError:
+                # If the DB schema is not yet in sync (e.g. running migrations), skip creating
+                # the default user to avoid breaking CLI commands like `flask db migrate`.
+                app.logger.warning(
+                    "Skipping creation of default user '%s' because the database schema is not ready.",
+                    default_username,
+                )
 
     return app
 

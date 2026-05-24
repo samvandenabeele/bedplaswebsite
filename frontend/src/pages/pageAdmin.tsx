@@ -6,5 +6,5 @@ type PageAdminProps = {
 };
 
 export default function PageAdmin({ currentUser }: PageAdminProps) {
-  return <AdminSections currentUser={currentUser} />;
+  return <AdminSections currentUser={currentUser} panel="admin" />;
 }

@@ -34,6 +34,8 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=True, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     token_version = db.Column(db.Integer, nullable=False, default=0)
+    # role: 'user' (regular counselor), 'superuser' (camp-level admin), or 'admin' (global admin)
+    role = db.Column(db.String(32), nullable=False, default="user", index=True)
     camp_id = db.Column(db.Integer, db.ForeignKey("camp.id"), nullable=True, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     active = db.Column(db.Boolean, default=True)
@@ -49,10 +51,19 @@ class User(db.Model):
             "id": self.id,
             "username": self.username,
             "email": self.email,
+            "role": getattr(self, "role", "user"),
             "created_at": self.created_at.isoformat(),
             "camp_id": self.camp_id,
             "camp": self.camp.to_dict() if getattr(self, "camp", None) is not None else None,
         }
+
+    @property
+    def is_admin(self) -> bool:
+        return getattr(self, "role", "user") == "admin"
+
+    @property
+    def is_superuser(self) -> bool:
+        return getattr(self, "role", "user") == "superuser"
     
 
 class Participant(db.Model):

@@ -10,26 +10,10 @@ import {
 } from "./api";
 import LoginPage from "./pages/LoginPage";
 import PageAdmin from "./pages/pageAdmin";
+import PageSuperuser from "./pages/pageSuperuser";
 import PageUser from "./pages/pageUser";
 
-type View = "user" | "admin";
-
-const views: Array<{
-  key: View;
-  label: string;
-  description: string;
-}> = [
-  {
-    key: "user",
-    label: "User",
-    description: "Fast daily entry",
-  },
-  {
-    key: "admin",
-    label: "Admin",
-    description: "Manage settings",
-  },
-];
+type View = "user" | "superuser" | "admin";
 
 function App() {
   const [authState, setAuthState] = useState<
@@ -129,24 +113,43 @@ function App() {
 
             <div className="flex flex-wrap items-center gap-2 md:justify-end">
               <div className="inline-flex gap-1 rounded-2xl border border-white/10 bg-white/5 p-1 shadow-lg shadow-slate-950/30 backdrop-blur">
-                {views.map((view) => {
-                  const isActive = activeView === view.key;
+                {(() => {
+                  const availableViews: Array<{ key: View; label: string }> =
+                    [];
+                  availableViews.push({ key: "user", label: "User" });
+                  if (
+                    currentUser?.role === "superuser" ||
+                    currentUser?.role === "admin"
+                  ) {
+                    availableViews.push({
+                      key: "superuser",
+                      label: "Superuser",
+                    });
+                  }
+                  if (currentUser?.role === "admin") {
+                    availableViews.push({ key: "admin", label: "Admin" });
+                  }
 
-                  return (
-                    <button
-                      key={view.key}
-                      type="button"
-                      onClick={() => setActiveView(view.key)}
-                      className={`rounded-xl px-3 py-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 sm:px-4 sm:py-2.5 ${
-                        isActive
-                          ? "bg-cyan-400 text-slate-950 shadow-md shadow-cyan-500/20"
-                          : "text-slate-300 hover:bg-white/5 hover:text-white"
-                      }`}
-                    >
-                      <div className="text-sm font-semibold">{view.label}</div>
-                    </button>
-                  );
-                })}
+                  return availableViews.map((view) => {
+                    const isActive = activeView === view.key;
+                    return (
+                      <button
+                        key={view.key}
+                        type="button"
+                        onClick={() => setActiveView(view.key)}
+                        className={`rounded-xl px-3 py-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 sm:px-4 sm:py-2.5 ${
+                          isActive
+                            ? "bg-cyan-400 text-slate-950 shadow-md shadow-cyan-500/20"
+                            : "text-slate-300 hover:bg-white/5 hover:text-white"
+                        }`}
+                      >
+                        <div className="text-sm font-semibold">
+                          {view.label}
+                        </div>
+                      </button>
+                    );
+                  });
+                })()}
               </div>
 
               <button
@@ -164,6 +167,8 @@ function App() {
           <div className="w-full max-w-5xl">
             {activeView === "user" ? (
               <PageUser currentUser={currentUser} />
+            ) : activeView === "superuser" ? (
+              <PageSuperuser currentUser={currentUser} />
             ) : (
               <PageAdmin currentUser={currentUser} />
             )}
