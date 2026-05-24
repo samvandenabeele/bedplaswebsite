@@ -1,55 +1,17 @@
-from datetime import datetime, timedelta
-from functools import wraps
 
+from datetime import datetime, timedelta
 from flask import Blueprint, current_app, g, jsonify, request
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import Date, func, or_
+from sqlalchemy import func, or_
 
 from extensions import db
 from models import User, Participant, Water, Urine, Diaper, ClockUse, Clock
+from api_auth import create_access_token, require_auth
+from participant_service import resolve_participant, participant_activity_summary
+from entry_service import entry_model_for_kind
+from excel_import import process_workbook
 
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
-
-
-def _serializer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="bedplas-auth-token")
-
-
-def create_access_token(user: User) -> str:
-    payload = {"user_id": user.id, "token_version": user.token_version}
-    return _serializer().dumps(payload)
-
-
-def get_user_from_token(token: str) -> User | None:
-    try:
-        payload = _serializer().loads(token, max_age=current_app.config["AUTH_TOKEN_MAX_AGE"])
-    except (BadSignature, SignatureExpired):
-        return None
-
-    user = db.session.get(User, payload.get("user_id"))
-    if user is None or user.token_version != payload.get("token_version"):
-        return None
-    return user
-
-
-def require_auth(view_func):
-    @wraps(view_func)
-    def wrapper(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
-        token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
-        if not token:
-            return jsonify({"error": "Authorization token required."}), 401
-
-        user = get_user_from_token(token)
-        if user is None:
-            return jsonify({"error": "Invalid or expired token."}), 401
-
-        g.current_user = user
-        return view_func(*args, **kwargs)
-
-    return wrapper
-
 
 @api_bp.get("/health")
 def health_check():
@@ -184,46 +146,7 @@ def query_participant():
         query = query.filter(Participant.phone_2.ilike(f"%{payload.get('phone_2')}%"))
     
     participants = query.all()
-    today = func.current_date()
-    now = datetime.now()
-    cutoff_date = now.date() if now.hour >= 18 else now.date() - timedelta(days=1)
-    six_pm_today = datetime.combine(cutoff_date, datetime.min.time()).replace(hour=18)
-    
-    return jsonify({
-        "participants": [
-            {
-                "id": p.id,
-                "name": p.name,
-                "last_name": p.last_name,
-                "phone_1": p.phone_1,
-                "phone_2": p.phone_2,
-                "empty_diaper": p.empty_diaper,
-                "drank_today": db.session.query(func.count(Water.id))
-                .filter(
-                    Water.participant_id == p.id,
-                    func.date(Water.created_at) == today,
-                )
-                .scalar(),
-                "peed_today": db.session.query(func.coalesce(func.sum(Urine.amount), 0))
-                .filter(
-                    Urine.participant_id == p.id,
-                    func.date(Urine.created_at) == today,
-                )
-                .scalar(),
-                "largest_pee": db.session.query(func.coalesce(func.max(Urine.amount), 0))
-                .filter(Urine.participant_id == p.id)
-                .scalar(),
-                "active": p.active,
-                "clock": db.session.query(func.count(ClockUse.id))
-                .filter(
-                    ClockUse.participant_id == p.id,
-                    ClockUse.created_at >= six_pm_today,
-                )
-                .scalar() % 2 == 1,
-            }
-            for p in participants
-        ]
-    })
+    return jsonify({"participants": [participant_activity_summary(p) for p in participants]})
 
 @api_bp.route("/queryCounselor", methods=["POST"])
 @require_auth
@@ -254,7 +177,7 @@ def query_counselor():
 @require_auth
 def update_empty_diaper():
     payload = request.get_json(silent=True) or {}
-    participant = _resolve_participant(payload)
+    participant = resolve_participant(payload)
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
@@ -278,26 +201,7 @@ def update_empty_diaper():
     )
 
 
-def _resolve_participant(payload: dict):
-    participant_id = payload.get("participant_id")
-    if participant_id is not None and str(participant_id).strip() != "":
-        try:
-            participant = db.session.get(Participant, int(participant_id))
-        except (TypeError, ValueError):
-            participant = None
-        if participant is not None:
-            return participant
 
-    name = str(payload.get("name", "")).strip()
-    last_name = str(payload.get("last_name", "")).strip()
-
-    if not name or not last_name:
-        return None
-
-    return Participant.query.filter(
-        Participant.name == name,
-        Participant.last_name == last_name,
-    ).first()
 
 @api_bp.route("/addWater", methods=["POST"])
 @require_auth
@@ -305,7 +209,7 @@ def add_water():
     payload = request.get_json(silent=True) or {}
     meal = bool(payload.get("meal"))
 
-    participant = _resolve_participant(payload)
+    participant = resolve_participant(payload)
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
@@ -323,7 +227,7 @@ def add_urine():
     amount = int(payload.get("amount"))
     note = str(payload.get("note", "")).strip() or None
 
-    participant = _resolve_participant(payload)
+    participant = resolve_participant(payload)
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
@@ -341,7 +245,7 @@ def add_diaper():
     weight = int(payload.get("weight"))
     note = str(payload.get("note", "")).strip() or None
 
-    participant = _resolve_participant(payload)
+    participant = resolve_participant(payload)
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
@@ -461,9 +365,11 @@ def recent_entries():
     water_entries = Water.query.order_by(Water.created_at.desc()).limit(limit).all()
     urine_entries = Urine.query.order_by(Urine.created_at.desc()).limit(limit).all()
     diaper_entries = Diaper.query.order_by(Diaper.created_at.desc()).limit(limit).all()
+    clock_entries = Clock.query.order_by(Clock.created_at.desc()).limit(limit).all()
 
     participant_ids = {
-        entry.participant_id for entry in water_entries + urine_entries + diaper_entries
+        entry.participant_id
+        for entry in water_entries + urine_entries + diaper_entries + clock_entries
     }
     participants = Participant.query.filter(Participant.id.in_(participant_ids)).all() if participant_ids else []
     participant_by_id = {
@@ -525,6 +431,24 @@ def recent_entries():
             "note": entry.note,
         }
         for entry in diaper_entries
+    ] + [
+        {
+            "id": entry.id,
+            "kind": "clock",
+            "participant_id": entry.participant_id,
+            "participant_name": participant_by_id.get(entry.participant_id).name
+            if participant_by_id.get(entry.participant_id)
+            else "Unknown",
+            "participant_last_name": participant_by_id.get(entry.participant_id).last_name
+            if participant_by_id.get(entry.participant_id)
+            else "",
+            "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            "meal": None,
+            "amount": None,
+            "weight": None,
+            "note": None,
+        }
+        for entry in clock_entries
     ]
 
     merged_entries.sort(key=lambda entry: entry.get("created_at") or "", reverse=True)
@@ -532,20 +456,13 @@ def recent_entries():
     return jsonify({"entries": merged_entries[:limit]})
 
 
-def _entry_model_for_kind(kind: str):
-    if kind == "water":
-        return Water
-    if kind == "urine":
-        return Urine
-    if kind == "diaper":
-        return Diaper
-    return None
+# use entry_service.entry_model_for_kind
 
 
 @api_bp.patch("/entry/<string:kind>/<int:entry_id>")
 @require_auth
 def update_entry(kind: str, entry_id: int):
-    model = _entry_model_for_kind(kind)
+    model = entry_model_for_kind(kind)
     if model is None:
         return jsonify({"error": "Unsupported entry kind."}), 400
 
@@ -594,7 +511,7 @@ def update_entry(kind: str, entry_id: int):
 @api_bp.delete("/entry/<string:kind>/<int:entry_id>")
 @require_auth
 def delete_entry(kind: str, entry_id: int):
-    model = _entry_model_for_kind(kind)
+    model = entry_model_for_kind(kind)
     if model is None:
         return jsonify({"error": "Unsupported entry kind."}), 400
 
@@ -614,98 +531,12 @@ def excel_participants_counselors():
     upload = request.files.get("file")
     if upload is None:
         return jsonify({"error": "No file uploaded. Provide file field 'file'."}), 400
-
+    # Delegate processing to helper that returns created/skipped counts and counselors list.
     try:
-        from openpyxl import load_workbook
+        created_participants, skipped_participants, created_counselors = process_workbook(upload)
     except Exception:
-        return jsonify({"error": "openpyxl is not installed on the server."}), 500
-
-    try:
-        wb = load_workbook(filename=upload, data_only=True)
-    except Exception as exc:
-        return jsonify({"error": f"Failed to read workbook: {exc}"}), 400
-
-    created_participants = 0
-    skipped_participants = 0
-    created_counselors = []
-
-    def _cell_str(sheet, row, col):
-        v = sheet.cell(row=row, column=col).value
-        return str(v).strip() if v is not None else ""
-
-    # Process Participants from 'Deelnemers' sheet
-    if "Deelnemers" in wb.sheetnames:
-        sheet = wb["Deelnemers"]
-        row = 11
-        while True:
-            first = _cell_str(sheet, row, 4)  # D
-            last = _cell_str(sheet, row, 5)   # E
-            phone_k = _cell_str(sheet, row, 11)  # K
-            phone_l = _cell_str(sheet, row, 12)  # L
-
-            if not first and not last:
-                # assume end when blank name reached
-                break
-
-            if not first or not last:
-                skipped_participants += 1
-                row += 1
-                continue
-
-            phone_1 = phone_k or phone_l
-            phone_2 = phone_l if phone_k else ""
-
-            # Try find existing participant by name
-            existing = Participant.query.filter(
-                Participant.name == first,
-                Participant.last_name == last,
-            ).first()
-
-            if existing is None:
-                if not phone_1:
-                    # require at least one phone to create
-                    skipped_participants += 1
-                else:
-                    new_p = Participant(name=first, last_name=last, phone_1=phone_1, phone_2=phone_2)
-                    db.session.add(new_p)
-                    created_participants += 1
-            row += 1
-
-    # Process Counselors from 'Vrijwilligers' sheet
-    if "Vrijwilligers" in wb.sheetnames:
-        sheet = wb["Vrijwilligers"]
-        row = 11
-        import secrets
-
-        while True:
-            func_val = _cell_str(sheet, row, 2)  # B
-            first = _cell_str(sheet, row, 4)     # D
-            last = _cell_str(sheet, row, 5)      # E
-            email = _cell_str(sheet, row, 13)    # M
-
-            if not first and not last and not func_val and not email:
-                break
-
-            # Only add counselors where function is 'Monitor' or contains 'VV'
-            func_check = func_val.lower()
-            if "monitor" in func_check or "vv" in func_check:
-                # Determine username
-                base_username = f"{first}.{last}".lower().replace(" ", "")
-                username = base_username
-                suffix = 1
-                while User.query.filter_by(username=username).first() is not None:
-                    suffix += 1
-                    username = f"{base_username}{suffix}"
-
-                # Only create if email or username not already present
-                if User.query.filter_by(email=email).first() is None and User.query.filter_by(username=username).first() is None:
-                    pwd = secrets.token_urlsafe(10)
-                    u = User(username=username, email=email or None)
-                    u.set_password(pwd)
-                    db.session.add(u)
-                    created_counselors.append({"username": username, "email": email, "password": pwd})
-
-            row += 1
+        # Likely openpyxl missing or workbook parse error; return generic error.
+        return jsonify({"error": "Failed to process workbook. Is openpyxl installed and is file valid?"}), 400
 
     # Commit all new records
     try:
