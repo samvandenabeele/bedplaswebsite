@@ -455,22 +455,6 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
     }).format(date);
   }
 
-  function formatCampDateRange(camp: CampSummary) {
-    if (camp.start_date && camp.end_date) {
-      return `${formatCampDate(camp.start_date)} – ${formatCampDate(camp.end_date)}`;
-    }
-
-    if (camp.start_date) {
-      return `Vanaf ${formatCampDate(camp.start_date)}`;
-    }
-
-    if (camp.end_date) {
-      return `Tot ${formatCampDate(camp.end_date)}`;
-    }
-
-    return "-";
-  }
-
   function formatCampLabel(camp: CampSummary) {
     const baseLabel = camp.name ? `${camp.name} (${camp.code})` : camp.code;
     return baseLabel;
