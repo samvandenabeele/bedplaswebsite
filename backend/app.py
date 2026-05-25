@@ -38,6 +38,10 @@ def create_app(config_class=Config):
         return jsonify({"message": "BedPlas API"})
 
     with app.app_context():
+        # Ensure the database schema exists before any startup bootstrap queries run.
+        # This makes the app safe to start against a fresh Postgres volume.
+        db.create_all()
+
         # Create a default user from environment variables if provided.
         # This is useful for local development so an admin user exists.
         default_username = os.environ.get("DEFAULT_USER_USERNAME")
