@@ -22,7 +22,7 @@ def _parse_header_date_range(header):
     return start_date, end_date
 
 
-def _extract_camp_metadata(wb):
+def _extract_camp_metadata(wb, camp_name: str | None = None):
     header = ""
 
     for sheet_name in wb.sheetnames:
@@ -40,7 +40,13 @@ def _extract_camp_metadata(wb):
         return None
 
     code = code_match.group(1).strip()
-    name = re.sub(r"\s*\(vakantiecode\s+[^)]+\)\s*$", "", header, flags=re.IGNORECASE).strip() or None
+    header_name = re.sub(
+        r"\s*\(vakantiecode\s+[^)]+\)\s*$",
+        "",
+        header,
+        flags=re.IGNORECASE,
+    ).strip() or None
+    name = camp_name.strip() if camp_name and camp_name.strip() else header_name
     start_date, end_date = _parse_header_date_range(header)
 
     camp = Camp.query.filter_by(code=code).first()
@@ -48,7 +54,7 @@ def _extract_camp_metadata(wb):
         camp = Camp(code=code, name=name, source_header=header, start_date=start_date, end_date=end_date)
         db.session.add(camp)
     else:
-        if name and not camp.name:
+        if name:
             camp.name = name
         if not camp.source_header:
             camp.source_header = header
@@ -62,7 +68,7 @@ def _extract_camp_metadata(wb):
     return camp
 
 
-def process_workbook(upload):
+def process_workbook(upload, camp_name: str | None = None):
     # import lazily so callers can return a helpful error if openpyxl isn't installed
     try:
         from openpyxl import load_workbook
@@ -71,7 +77,7 @@ def process_workbook(upload):
 
     # upload is a FileStorage-like object
     wb = load_workbook(filename=upload, data_only=True)
-    camp = _extract_camp_metadata(wb)
+    camp = _extract_camp_metadata(wb, camp_name=camp_name)
     camp_id = camp.id if camp is not None else None
 
     created_participants = 0
@@ -164,8 +170,8 @@ def process_workbook(upload):
 
         while True:
             func_val = _cell_str(sheet, row, 2)  # B
-            first = _cell_str(sheet, row, 4)     # D
-            last = _cell_str(sheet, row, 5)      # E
+            first = _cell_str(sheet, row, 5)     # D
+            last = _cell_str(sheet, row, 6)      # E
             email = _cell_str(sheet, row, 13)    # M
 
             if not first and not last and not func_val and not email:

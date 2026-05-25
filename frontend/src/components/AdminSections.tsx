@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   addParticipant,
+  downloadDiaries,
   deleteEntry,
   createCamp,
   getCamps,
@@ -73,6 +74,11 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
   const [campError, setCampError] = useState<string | null>(null);
   const [campStatus, setCampStatus] = useState<string | null>(null);
   const [campActionKey, setCampActionKey] = useState<string | null>(null);
+  const [downloadCampId, setDownloadCampId] = useState<number | "">(
+    currentUser?.camp_id ?? "",
+  );
+  const [isDownloadingDiaries, setIsDownloadingDiaries] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
   const [selectedParticipantCampId, setSelectedParticipantCampId] = useState<
     number | ""
   >(currentUser?.camp_id ?? "");
@@ -130,6 +136,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
       const defaultCampId = currentUser?.camp_id ?? response.camps[0]?.id ?? "";
       setSelectedParticipantCampId(defaultCampId);
       setSelectedAccountCampId(defaultCampId);
+      setDownloadCampId(defaultCampId);
     } catch (error) {
       setCampError(
         error instanceof Error ? error.message : "Failed to load camps.",
@@ -187,6 +194,26 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
       );
     } finally {
       setCampActionKey(null);
+    }
+  }
+
+  async function handleDownloadDiaries(campId: number | undefined) {
+    setDownloadStatus(null);
+    setIsDownloadingDiaries(true);
+
+    try {
+      if (campId === undefined) {
+        throw new Error("Select a camp before downloading diaries.");
+      }
+
+      await downloadDiaries(campId);
+      setDownloadStatus("Diary export started.");
+    } catch (error) {
+      setDownloadStatus(
+        error instanceof Error ? error.message : "Failed to download diaries.",
+      );
+    } finally {
+      setIsDownloadingDiaries(false);
     }
   }
 
@@ -353,12 +380,32 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
       return;
     }
 
+    const campName = window.prompt(
+      "Enter the camp name for this Excel upload.",
+    );
+    if (campName === null) {
+      event.target.value = "";
+      return;
+    }
+
+    const normalizedCampName = campName.trim();
+    if (!normalizedCampName) {
+      setExcelUploadError(
+        "Camp name is required before uploading the Excel file.",
+      );
+      event.target.value = "";
+      return;
+    }
+
     setExcelUploadStatus(null);
     setExcelUploadError(null);
     setIsUploadingExcel(true);
 
     try {
-      const result = await uploadParticipantsCounselorsExcel(selectedFile);
+      const result = await uploadParticipantsCounselorsExcel(
+        selectedFile,
+        normalizedCampName,
+      );
       setExcelUploadStatus(
         `Upload complete. ${result.participants_created} participants added, ${result.participants_skipped} skipped, ${result.counselors_created.length} counselors created.`,
       );
@@ -426,8 +473,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
 
   function formatCampLabel(camp: CampSummary) {
     const baseLabel = camp.name ? `${camp.name} (${camp.code})` : camp.code;
-    const dateRange = formatCampDateRange(camp);
-    return dateRange === "-" ? baseLabel : `${baseLabel} · ${dateRange}`;
+    return baseLabel;
   }
 
   function formatEntryType(kind: RecentEntry["kind"]) {
@@ -645,6 +691,52 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                     )}
                   </div>
                 </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <label className="block w-full space-y-2 sm:max-w-md">
+                    <span className="text-sm font-medium text-slate-200">
+                      Camp for diary export
+                    </span>
+                    <CustomSelect<number>
+                      value={downloadCampId}
+                      onChange={(next) => setDownloadCampId(next)}
+                      options={camps.map((camp) => ({
+                        id: camp.id,
+                        label: formatCampLabel(camp),
+                      }))}
+                      placeholder={
+                        isLoadingCamps ? "Loading camps..." : "Select a camp"
+                      }
+                      disabled={isLoadingCamps || currentUser?.role !== "admin"}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleDownloadDiaries(
+                        downloadCampId === "" ? undefined : downloadCampId,
+                      )
+                    }
+                    disabled={
+                      isDownloadingDiaries ||
+                      isLoadingCamps ||
+                      currentUser?.role !== "admin" ||
+                      downloadCampId === ""
+                    }
+                    className="w-fit rounded-2xl border border-cyan-300/35 bg-cyan-300/15 px-4 py-3 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/25 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+                  >
+                    {isDownloadingDiaries
+                      ? "Downloading diaries..."
+                      : "Download diaries"}
+                  </button>
+                </div>
+
+                {downloadStatus ? (
+                  <div className="rounded-2xl border border-sky-300/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+                    {downloadStatus}
+                  </div>
+                ) : null}
               </div>
 
               <div className="grid gap-6 border-b border-white/10 px-5 py-5 sm:px-6 lg:grid-cols-[0.95fr_1.05fr]">
@@ -788,23 +880,21 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                               </td>
                               <td className="px-4 py-3 text-slate-300">
                                 {camp.name || "-"}
-                                {camp.source_header ? (
-                                  <div className="mt-1 max-w-72 truncate text-xs text-slate-500">
-                                    {camp.source_header}
-                                  </div>
-                                ) : null}
                               </td>
                               <td className="px-4 py-3 text-slate-300">
-                                <div>{formatCampDateRange(camp)}</div>
-                                <div className="mt-1 text-xs text-slate-500">
+                                <div>
                                   {camp.start_date || camp.end_date
                                     ? `${camp.start_date ? formatCampDate(camp.start_date) : "-"} → ${camp.end_date ? formatCampDate(camp.end_date) : "-"}`
                                     : "Dates not set"}
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-slate-300">
-                                <div>{camp.participant_count} participants</div>
-                                <div>{camp.counselor_count} counselors</div>
+                                <div className="text-nowrap">
+                                  {camp.participant_count} participants
+                                </div>
+                                <div className="text-nowrap">
+                                  {camp.counselor_count} counselors
+                                </div>
                               </td>
                               <td className="px-4 py-3 text-slate-300">
                                 {camp.active ? "Active" : "Inactive"}
@@ -1386,8 +1476,28 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                     >
                       {isUploadingExcel ? "Uploading Excel..." : "Upload Excel"}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleDownloadDiaries(
+                          currentUser?.camp_id ?? undefined,
+                        )
+                      }
+                      disabled={isDownloadingDiaries || !currentUser?.camp_id}
+                      className="rounded-2xl border border-cyan-300/35 bg-cyan-300/15 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/25 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
+                    >
+                      {isDownloadingDiaries
+                        ? "Downloading diaries..."
+                        : "Download diaries"}
+                    </button>
                   </div>
                 </div>
+
+                {downloadStatus ? (
+                  <div className="rounded-2xl border border-sky-300/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+                    {downloadStatus}
+                  </div>
+                ) : null}
 
                 {excelUploadStatus ? (
                   <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">

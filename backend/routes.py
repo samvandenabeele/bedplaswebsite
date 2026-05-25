@@ -1,6 +1,10 @@
 
 from datetime import datetime, timedelta
-from flask import Blueprint, current_app, g, jsonify, request
+from io import BytesIO
+from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from flask import Blueprint, current_app, g, jsonify, request, send_file
 from sqlalchemy import func, or_
 
 from extensions import db
@@ -878,11 +882,14 @@ def excel_participants_counselors():
     # Accept an uploaded Excel file (multipart/form-data, field name 'file') and
     # create Participants and Counselor Users automatically.
     upload = request.files.get("file")
+    camp_name = str(request.form.get("camp_name", "")).strip()
     if upload is None:
         return jsonify({"error": "No file uploaded. Provide file field 'file'."}), 400
+    if not camp_name:
+        return jsonify({"error": "camp_name is required."}), 400
     # Delegate processing to helper that returns created/skipped counts and counselors list.
     try:
-        created_participants, skipped_participants, created_counselors = process_workbook(upload)
+        created_participants, skipped_participants, created_counselors = process_workbook(upload, camp_name=camp_name)
     except Exception:
         # Likely openpyxl missing or workbook parse error; return generic error.
         return jsonify({"error": "Failed to process workbook. Is openpyxl installed and is file valid?"}), 400
@@ -932,22 +939,52 @@ def add_clock_use():
 
     return jsonify({'message' : 'clockUse added', 'participant_id': id})
 
-@api_bp.get("downloadDiaries")
+@api_bp.get("/downloadDiaries")
 @require_auth
 def download_diaries():
-    payload = request.get_json(silent=True) or {}
-    camp_id = payload.get("camp_id", "")
-    
-    files = []
+    camp_id = request.args.get("camp_id", type=int)
+    current_user = getattr(g, "current_user", None)
 
-    if not camp_id:
+    if camp_id is None:
+        camp_id = getattr(current_user, "camp_id", None)
+
+    if camp_id is None:
         return jsonify({"error": "Camp ID is required."}), 400
-    
+
+    camp = db.session.get(Camp, camp_id)
+    if camp is None:
+        return jsonify({"error": "Camp not found."}), 404
+
+    if getattr(current_user, "is_superuser", False) and not getattr(current_user, "is_admin", False):
+        if current_user.camp_id != camp_id:
+            return jsonify({"error": "Superusers can only download diaries for their own camp."}), 403
+
     participants = (
         db.session.query(Participant)
         .filter(Participant.camp_id == camp_id)
+        .order_by(Participant.last_name, Participant.name, Participant.id)
         .all()
     )
 
-    for p in participants:
-        files.append(create_diary(p))
+    if not participants:
+        return jsonify({"error": "No participants found for this camp."}), 404
+
+    export_buffer = BytesIO()
+    export_name = f"camp_{camp.id}_diaries.zip"
+
+    with ZipFile(export_buffer, mode="w", compression=ZIP_DEFLATED) as archive:
+        for participant in participants:
+            diary_path = Path(create_diary(participant))
+            try:
+                archive.write(diary_path, arcname=diary_path.name)
+            finally:
+                diary_path.unlink(missing_ok=True)
+
+    export_buffer.seek(0)
+
+    return send_file(
+        export_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=export_name,
+    )

@@ -385,9 +385,13 @@ export function queryCounselors(payload: CounselorQuery = {}) {
   });
 }
 
-export function uploadParticipantsCounselorsExcel(file: File) {
+export function uploadParticipantsCounselorsExcel(
+  file: File,
+  campName: string,
+) {
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("camp_name", campName);
 
   return request<ExcelParticipantsCounselorsResponse>(
     "/excelParticipantsCounselors",
@@ -396,6 +400,37 @@ export function uploadParticipantsCounselorsExcel(file: File) {
       body: formData,
     },
   );
+}
+
+export async function downloadDiaries(campId?: number) {
+  const token = getStoredToken();
+  const path =
+    campId === undefined
+      ? "/downloadDiaries"
+      : `/downloadDiaries?camp_id=${campId}`;
+
+  const response = await fetch(buildUrl(path), {
+    method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  if (!response.ok) {
+    await parseResponse<never>(response);
+    return;
+  }
+
+  const blob = await response.blob();
+  const downloadUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = downloadUrl;
+  link.download =
+    response.headers
+      .get("content-disposition")
+      ?.match(/filename="?([^";]+)"?/i)?.[1] ?? "camp_diaries.zip";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(downloadUrl);
 }
 
 export function addWater(payload: WaterPayload) {
