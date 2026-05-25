@@ -76,6 +76,7 @@ class Participant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String, unique=False, nullable=False, index=True)
     last_name = db.Column(db.String, unique=False, nullable=False, index=True)
+    birth_date = db.Column(db.Date, nullable=True)
     phone_1 = db.Column(db.String, unique=False, nullable=False, index=True)
     phone_2 = db.Column(db.String, unique=False, nullable=True)
     camp_id = db.Column(db.Integer, db.ForeignKey("camp.id"), nullable=True, index=True)
@@ -102,6 +103,7 @@ class Urine(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
     amount = db.Column(db.Integer, nullable=False)
+    faeces = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     note = db.Column(db.Text, nullable=True)
 

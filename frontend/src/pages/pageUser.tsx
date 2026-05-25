@@ -51,6 +51,7 @@ function PageUser({ currentUser }: PageUserProps) {
     meal: false,
     amount: "0",
     weight: "0",
+    faeces: false,
     note: "",
   });
   const [recentEntryTypeFilter, setRecentEntryTypeFilter] = useState<
@@ -61,6 +62,7 @@ function PageUser({ currentUser }: PageUserProps) {
   const [meal, setMeal] = useState(true);
   const [urineAmount, setUrineAmount] = useState("0");
   const [urineNote, setUrineNote] = useState("");
+  const [urineFaeces, setUrineFaeces] = useState(false);
   const [diaperWeight, setDiaperWeight] = useState("0");
   const [diaperNote, setDiaperNote] = useState("");
   const [emptyDiaperDraft, setEmptyDiaperDraft] = useState("0");
@@ -155,6 +157,7 @@ function PageUser({ currentUser }: PageUserProps) {
           last_name: selectedParticipant.last_name,
           amount: Number(urineAmount),
           note: urineNote.trim() || undefined,
+          faeces: urineFaeces,
         });
         setMessage(`Plas toegevoegd voor ${selectedParticipant.name}.`);
       }
@@ -260,6 +263,7 @@ function PageUser({ currentUser }: PageUserProps) {
     setEditingEntryKey(rowKeyForEntry(entry));
     setEditDraft({
       meal: Boolean(entry.meal),
+      faeces: Boolean((entry as any).faeces),
       amount: String(entry.amount ?? 0),
       weight: String(entry.weight ?? 0),
       note: entry.note ?? "",
@@ -297,6 +301,7 @@ function PageUser({ currentUser }: PageUserProps) {
           id: entry.id,
           amount: Math.trunc(nextAmount),
           note: editDraft.note,
+          faeces: Boolean((editDraft as any).faeces),
         });
       }
 
@@ -535,6 +540,16 @@ function PageUser({ currentUser }: PageUserProps) {
                     disabled={!selectedParticipant}
                   />
                 </div>
+              </label>
+
+              <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={urineFaeces}
+                  onChange={(event) => setUrineFaeces(event.target.checked)}
+                  className="h-4 w-4 rounded border-white/20 bg-white/10 accent-emerald-400"
+                />
+                Met ontlasting
               </label>
 
               <button
@@ -824,24 +839,44 @@ function PageUser({ currentUser }: PageUserProps) {
                                 Plaswekker gebruikt
                               </span>
                             ) : (
-                              <input
-                                type="number"
-                                min={0}
-                                value={
-                                  entry.kind === "urine"
-                                    ? editDraft.amount
-                                    : editDraft.weight
-                                }
-                                onChange={(event) =>
-                                  setEditDraft((current) => ({
-                                    ...current,
-                                    [entry.kind === "urine"
-                                      ? "amount"
-                                      : "weight"]: event.target.value,
-                                  }))
-                                }
-                                className="w-28 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-slate-100 outline-none focus:border-emerald-300/60 focus:ring-2 focus:ring-emerald-300/20"
-                              />
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={
+                                    entry.kind === "urine"
+                                      ? editDraft.amount
+                                      : editDraft.weight
+                                  }
+                                  onChange={(event) =>
+                                    setEditDraft((current) => ({
+                                      ...current,
+                                      [entry.kind === "urine"
+                                        ? "amount"
+                                        : "weight"]: event.target.value,
+                                    }))
+                                  }
+                                  className="w-28 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-slate-100 outline-none focus:border-emerald-300/60 focus:ring-2 focus:ring-emerald-300/20"
+                                />
+                                {entry.kind === "urine" ? (
+                                  <label className="inline-flex items-center gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(
+                                        (editDraft as any).faeces,
+                                      )}
+                                      onChange={(event) =>
+                                        setEditDraft((current) => ({
+                                          ...current,
+                                          faeces: event.target.checked,
+                                        }))
+                                      }
+                                      className="h-4 w-4 rounded border-white/20 bg-white/10 accent-emerald-400"
+                                    />
+                                    Met ontlasting
+                                  </label>
+                                ) : null}
+                              </div>
                             )
                           ) : (
                             formatEntryDetails(entry)

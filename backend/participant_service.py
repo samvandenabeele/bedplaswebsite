@@ -62,6 +62,7 @@ def participant_activity_summary(p: Participant):
         "id": p.id,
         "name": p.name,
         "last_name": p.last_name,
+        "birth_date": p.birth_date.isoformat() if getattr(p, "birth_date", None) is not None else None,
         "phone_1": p.phone_1,
         "phone_2": p.phone_2,
         "camp_id": p.camp_id,

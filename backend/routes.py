@@ -314,6 +314,13 @@ def add_participants():
     phone_2 = str(payload.get("phone_2", "")).strip()
 
     diaper = payload.get("empty_diaper", 0)
+    # Optional birth date
+    birth_date = None
+    if "birth_date" in payload:
+        try:
+            birth_date = _parse_camp_date(payload.get("birth_date"), "birth_date")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     camp, camp_error = _camp_for_user_payload(payload)
     if camp_error is not None:
@@ -326,6 +333,7 @@ def add_participants():
         phone_2=phone_2,
         empty_diaper=diaper,
         camp_id=camp.id if camp is not None else None,
+        birth_date=birth_date,
     )
     db.session.add(new_participant)
     db.session.commit()
@@ -510,13 +518,14 @@ def add_urine():
     payload = request.get_json(silent=True) or {}
     amount = int(payload.get("amount"))
     note = str(payload.get("note", "")).strip() or None
+    faeces = bool(payload.get("faeces"))
 
     participant = resolve_participant(payload, _current_camp_id())
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
 
-    new_urine = Urine(participant_id=participant.id, amount=amount, note=note)
+    new_urine = Urine(participant_id=participant.id, amount=amount, note=note, faeces=faeces)
     db.session.add(new_urine)
     db.session.commit()
 
@@ -603,6 +612,7 @@ def participant_recent_entries(participant_id: int):
             "kind": "urine",
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "meal": None,
+            "faeces": entry.faeces,
             "amount": entry.amount,
             "weight": None,
             "note": entry.note,
@@ -822,6 +832,8 @@ def update_entry(kind: str, entry_id: int):
         if "note" in payload:
             note = str(payload.get("note", "")).strip() or None
             entry.note = note
+        if "faeces" in payload:
+            entry.faeces = bool(payload.get("faeces"))
 
     if kind == "diaper":
         if "weight" in payload:

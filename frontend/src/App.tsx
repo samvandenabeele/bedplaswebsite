@@ -129,6 +129,9 @@ function App() {
             <div>
               <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
                 Bedplas
+                <span className="ml-2 text-xs font-normal text-slate-400 tracking-normal">
+                  v1.2.0
+                </span>
               </h1>
               <p className="mt-1 text-xs text-slate-400 sm:text-sm">
                 Signed in as{" "}

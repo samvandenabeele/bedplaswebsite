@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, date
 
 from extensions import db
 from models import Camp, Participant, User
@@ -82,6 +82,36 @@ def process_workbook(upload):
         v = sheet.cell(row=row, column=col).value
         return str(v).strip() if v is not None else ""
 
+    def _cell_value(sheet, row, col):
+        return sheet.cell(row=row, column=col).value
+
+    def _parse_possible_date(v):
+        if v in (None, ""):
+            return None
+        if isinstance(v, datetime):
+            return v.date()
+        if isinstance(v, date):
+            return v
+        # Try common string formats
+        s = str(v).strip()
+        for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d.%m.%Y", "%d %m %Y"):
+            try:
+                return datetime.strptime(s, fmt).date()
+            except ValueError:
+                continue
+        # Last resort: try parsing day-month-year with flexible delimiters
+        m = re.match(r"^(\d{1,2})[^0-9](\d{1,2})[^0-9](\d{2,4})$", s)
+        if m:
+            d, mo, y = m.groups()
+            if len(y) == 2:
+                # assume 20xx for two-digit years
+                y = "20" + y
+            try:
+                return datetime.strptime(f"{d}-{mo}-{y}", "%d-%m-%Y").date()
+            except ValueError:
+                pass
+        return None
+
     # Process Participants from 'Deelnemers' sheet
     if "Deelnemers" in wb.sheetnames:
         sheet = wb["Deelnemers"]
@@ -119,7 +149,10 @@ def process_workbook(upload):
                     # require at least one phone to create
                     skipped_participants += 1
                 else:
-                    new_p = Participant(name=first, last_name=last, phone_1=phone_1, phone_2=phone_2, camp_id=camp_id)
+                    birth_val = _cell_value(sheet, row, 2)  # B
+                    birth_date = _parse_possible_date(birth_val)
+
+                    new_p = Participant(name=first, last_name=last, phone_1=phone_1, phone_2=phone_2, camp_id=camp_id, birth_date=birth_date)
                     db.session.add(new_p)
                     created_participants += 1
             row += 1

@@ -93,6 +93,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
     phone_1: "",
     phone_2: "",
     empty_diaper: "0",
+    birth_date: "",
   });
 
   const [accountForm, setAccountForm] = useState({
@@ -282,6 +283,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
         last_name: participantForm.last_name.trim(),
         phone_1: participantForm.phone_1.trim(),
         phone_2: participantForm.phone_2.trim() || undefined,
+        birth_date: participantForm.birth_date || undefined,
         empty_diaper: Number(participantForm.empty_diaper) || 0,
         camp_id:
           selectedParticipantCampId === ""
@@ -296,6 +298,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
         phone_1: "",
         phone_2: "",
         empty_diaper: "0",
+        birth_date: "",
       });
       await Promise.all([loadParticipants(), loadRecentEntries()]);
     } catch (error) {
@@ -946,15 +949,15 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                   <span className="text-sm font-medium text-slate-200">
                     Role
                   </span>
-                  <select
+                  <CustomSelect<string>
                     value={accountRole}
-                    onChange={(e) => setAccountRole(e.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none"
-                  >
-                    <option value="user">User</option>
-                    <option value="superuser">Superuser</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                    onChange={(next) => setAccountRole(next)}
+                    options={[
+                      { id: "user", label: "User" },
+                      { id: "superuser", label: "Superuser" },
+                      { id: "admin", label: "Admin" },
+                    ]}
+                  />
                 </label>
 
                 <div className="flex flex-wrap gap-3 lg:col-span-2">
@@ -1063,6 +1066,24 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                       }
                       className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
                       placeholder="Optional"
+                    />
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-slate-200">
+                      Birth date
+                    </span>
+                    <input
+                      value={participantForm.birth_date}
+                      onChange={(event) =>
+                        setParticipantForm((current) => ({
+                          ...current,
+                          birth_date: event.target.value,
+                        }))
+                      }
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                      placeholder="YYYY-MM-DD"
+                      type="date"
                     />
                   </label>
 
@@ -1243,17 +1264,14 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                       <span className="text-sm font-medium text-slate-200">
                         Role
                       </span>
-                      <select
+                      <CustomSelect<string>
                         value={accountRole}
-                        onChange={(e) => setAccountRole(e.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none"
-                      >
-                        <option value="user">User</option>
-                        <option value="superuser">Superuser</option>
-                        {currentUser?.role === "admin" ? (
-                          <option value="admin">Admin</option>
-                        ) : null}
-                      </select>
+                        onChange={(next) => setAccountRole(next)}
+                        options={[
+                          { id: "user", label: "User" },
+                          { id: "superuser", label: "Superuser" },
+                        ]}
+                      />
                     </label>
                   ) : (
                     <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
@@ -1398,6 +1416,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                       <tr>
                         <th className="px-4 py-3 font-medium sm:px-6">Name</th>
                         <th className="px-4 py-3 font-medium sm:px-6">Camp</th>
+                        <th className="px-4 py-3 font-medium sm:px-6">Birth</th>
                         <th className="px-4 py-3 font-medium sm:px-6">
                           Phone 1
                         </th>
@@ -1425,6 +1444,11 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                             {participant.camp_name ||
                               participant.camp_code ||
                               "-"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-300 sm:px-6">
+                            {participant.birth_date
+                              ? formatCampDate(participant.birth_date)
+                              : "-"}
                           </td>
                           <td className="px-4 py-3 text-slate-300 sm:px-6">
                             {participant.phone_1}

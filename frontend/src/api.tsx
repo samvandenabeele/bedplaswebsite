@@ -31,6 +31,7 @@ export type ParticipantSummary = {
   id: number;
   name: string;
   last_name: string;
+  birth_date?: string | null;
   phone_1: string;
   phone_2: string | null;
   camp_id: number | null;
@@ -105,6 +106,7 @@ export type ParticipantPayload = {
   last_name: string;
   phone_1: string;
   phone_2?: string;
+  birth_date?: string;
   empty_diaper?: number;
   camp_id?: number;
 };
@@ -130,6 +132,7 @@ export type UrinePayload = {
   last_name: string;
   amount: number;
   note?: string;
+  faeces?: boolean;
 };
 
 export type DiaperPayload = {
@@ -156,6 +159,7 @@ export type ParticipantRecentEntry = {
   kind: "water" | "urine" | "diaper" | "clock";
   created_at: string | null;
   meal: boolean | null;
+  faeces: boolean | null;
   amount: number | null;
   weight: number | null;
   note: string | null;
@@ -176,6 +180,7 @@ export type UpdateEntryPayload = {
   kind: EntryKind;
   id: number;
   meal?: boolean;
+  faeces?: boolean;
   amount?: number;
   weight?: number;
   note?: string;

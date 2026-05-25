@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 type OptionValue = string | number;
 
@@ -21,11 +22,76 @@ export default function CustomSelect<T extends OptionValue>({
 }: Props<T>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLUListElement | null>(null);
+  const [panelStyle, setPanelStyle] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPanelStyle(null);
+      return;
+    }
+
+    function updatePanelPosition() {
+      if (!buttonRef.current) return;
+
+      const rect = buttonRef.current.getBoundingClientRect();
+      const viewportPadding = 8;
+      const menuGap = 8;
+      const maxMenuWidth = window.innerWidth - viewportPadding * 2;
+      const estimatedMenuHeight = Math.min(224, options.length * 44 + 16);
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+      const spaceAbove = rect.top - viewportPadding;
+      const fitsBelow = spaceBelow >= estimatedMenuHeight + menuGap;
+      const fitsAbove = spaceAbove >= estimatedMenuHeight + menuGap;
+      const shouldOpenAbove = !fitsBelow && fitsAbove;
+      const maxHeight = Math.max(
+        120,
+        Math.min(
+          estimatedMenuHeight,
+          shouldOpenAbove ? spaceAbove - menuGap : spaceBelow - menuGap,
+        ),
+      );
+      const width = Math.min(rect.width, maxMenuWidth);
+      const left = Math.min(
+        Math.max(viewportPadding, rect.left),
+        window.innerWidth - viewportPadding - width,
+      );
+      const top = shouldOpenAbove
+        ? Math.max(viewportPadding, rect.top - menuGap - maxHeight)
+        : rect.bottom + menuGap;
+
+      setPanelStyle({
+        top,
+        left,
+        width,
+        maxHeight,
+      });
+    }
+
+    updatePanelPosition();
+    window.addEventListener("resize", updatePanelPosition);
+    window.addEventListener("scroll", updatePanelPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePanelPosition);
+      window.removeEventListener("scroll", updatePanelPosition, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       if (!ref.current) return;
-      if (e.target instanceof Node && !ref.current.contains(e.target)) {
+      if (
+        e.target instanceof Node &&
+        !ref.current.contains(e.target) &&
+        !panelRef.current?.contains(e.target)
+      ) {
         setOpen(false);
       }
     }
@@ -39,6 +105,7 @@ export default function CustomSelect<T extends OptionValue>({
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={buttonRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -68,32 +135,42 @@ export default function CustomSelect<T extends OptionValue>({
         </svg>
       </button>
 
-      {open && (
-        <ul
-          role="listbox"
-          className="absolute z-50 mt-2 max-h-56 w-full overflow-auto rounded-2xl border border-white/10 bg-slate-950/80 p-2 shadow-lg shadow-slate-950/40"
-        >
-          {options.map((opt) => {
-            const isSelected = opt.id === value;
-            return (
-              <li
-                key={opt.id}
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => {
-                  onChange(opt.id);
-                  setOpen(false);
-                }}
-                className={`cursor-pointer rounded-xl px-3 py-2 text-slate-100 hover:bg-white/5 ${
-                  isSelected ? "bg-emerald-400/10 text-emerald-200" : ""
-                }`}
-              >
-                {opt.label}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {open && panelStyle
+        ? createPortal(
+            <ul
+              ref={panelRef}
+              role="listbox"
+              className="fixed z-50 overflow-auto rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-lg shadow-slate-950/40"
+              style={{
+                top: panelStyle.top,
+                left: panelStyle.left,
+                width: panelStyle.width,
+                maxHeight: panelStyle.maxHeight,
+              }}
+            >
+              {options.map((opt) => {
+                const isSelected = opt.id === value;
+                return (
+                  <li
+                    key={opt.id}
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => {
+                      onChange(opt.id);
+                      setOpen(false);
+                    }}
+                    className={`cursor-pointer rounded-xl px-3 py-2 text-slate-100 hover:bg-white/5 ${
+                      isSelected ? "bg-emerald-400/10 text-emerald-200" : ""
+                    }`}
+                  >
+                    {opt.label}
+                  </li>
+                );
+              })}
+            </ul>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
