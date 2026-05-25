@@ -38,6 +38,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=True, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     token_version = db.Column(db.Integer, nullable=False, default=0)
+    password_change_required = db.Column(db.Boolean, nullable=False, default=False)
     # role: 'user' (regular counselor), 'superuser' (camp-level admin), or 'admin' (global admin)
     role = db.Column(db.String(32), nullable=False, default="user", index=True)
     camp_id = db.Column(db.Integer, db.ForeignKey("camp.id"), nullable=True, index=True)
@@ -56,6 +57,7 @@ class User(db.Model):
             "username": self.username,
             "email": self.email,
             "role": getattr(self, "role", "user"),
+            "password_change_required": getattr(self, "password_change_required", False),
             "created_at": self.created_at.isoformat(),
             "camp_id": self.camp_id,
             "camp": self.camp.to_dict() if getattr(self, "camp", None) is not None else None,

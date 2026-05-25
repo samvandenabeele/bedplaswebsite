@@ -152,6 +152,31 @@ def login():
     return jsonify({"user": user.to_dict(), "token": create_access_token(user)})
 
 
+@api_bp.post("/auth/password")
+@require_auth
+def change_password():
+    payload = request.get_json(silent=True) or {}
+    new_password = str(payload.get("new_password", ""))
+    current_password = str(payload.get("current_password", ""))
+
+    if not new_password:
+        return jsonify({"error": "new_password is required."}), 400
+
+    user = g.current_user
+    if not getattr(user, "password_change_required", False):
+        if not current_password:
+            return jsonify({"error": "current_password is required."}), 400
+        if not user.check_password(current_password):
+            return jsonify({"error": "Invalid credentials."}), 401
+
+    user.set_password(new_password)
+    user.password_change_required = False
+    user.token_version += 1
+    db.session.commit()
+
+    return jsonify({"user": user.to_dict(), "token": create_access_token(user)})
+
+
 @api_bp.post("/auth/logout")
 @require_auth
 def logout():

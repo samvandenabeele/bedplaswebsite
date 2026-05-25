@@ -3,6 +3,7 @@ export type AuthUser = {
   username: string;
   email: string | null;
   role: string;
+  password_change_required: boolean;
   created_at: string;
   camp_id: number | null;
   camp: CampSummary | null;
@@ -300,6 +301,19 @@ export function createUser(payload: CreateUserPayload) {
 
 export function login(payload: LoginPayload) {
   return request<AuthResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }).then((response) => {
+    setAuthToken(response.token);
+    return response;
+  });
+}
+
+export function changePassword(payload: {
+  new_password: string;
+  current_password?: string;
+}) {
+  return request<AuthResponse>("/auth/password", {
     method: "POST",
     body: JSON.stringify(payload),
   }).then((response) => {

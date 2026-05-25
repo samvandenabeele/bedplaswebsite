@@ -5,6 +5,9 @@ from extensions import db
 from models import Camp, Participant, User
 
 
+DEFAULT_IMPORTED_USER_PASSWORD = "123456"
+
+
 def _parse_header_date_range(header):
     date_matches = re.findall(r"\b(\d{2}-\d{2}-\d{4})\b", header)
     if len(date_matches) < 2:
@@ -125,7 +128,6 @@ def process_workbook(upload):
     if "Vrijwilligers" in wb.sheetnames:
         sheet = wb["Vrijwilligers"]
         row = 11
-        import secrets
 
         while True:
             func_val = _cell_str(sheet, row, 2)  # B
@@ -149,11 +151,11 @@ def process_workbook(upload):
 
                 # Only create if email or username not already present
                 if User.query.filter_by(email=email).first() is None and User.query.filter_by(username=username).first() is None:
-                    pwd = secrets.token_urlsafe(10)
                     u = User(username=username, email=email or None, camp_id=camp_id)
-                    u.set_password(pwd)
+                    u.set_password(DEFAULT_IMPORTED_USER_PASSWORD)
+                    u.password_change_required = True
                     db.session.add(u)
-                    created_counselors.append({"username": username, "email": email, "password": pwd})
+                    created_counselors.append({"username": username, "email": email, "password": DEFAULT_IMPORTED_USER_PASSWORD})
 
             row += 1
 

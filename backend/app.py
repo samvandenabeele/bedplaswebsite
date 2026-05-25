@@ -70,6 +70,7 @@ def create_app(config_class=Config):
                 "camp_id": "ALTER TABLE user ADD COLUMN camp_id INTEGER",
                 # role column for role-based permissions; default to 'user' for existing rows
                 "role": "ALTER TABLE user ADD COLUMN role TEXT NOT NULL DEFAULT 'user'",
+                "password_change_required": "ALTER TABLE user ADD COLUMN password_change_required BOOLEAN NOT NULL DEFAULT 0",
             }
 
             added_column = False

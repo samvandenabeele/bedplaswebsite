@@ -29,7 +29,7 @@ function LoginPage({ error, onLogin, onError }: LoginPageProps) {
   return (
     <div className="min-h-screen text-slate-100">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl items-start justify-center px-3 py-3 sm:items-center sm:px-6 sm:py-6 lg:px-8">
-        <section className="w-full max-w-md rounded-[2rem] border border-white/10 bg-white/8 p-4 shadow-2xl shadow-slate-950/40 backdrop-blur-xl sm:p-6 lg:p-8">
+        <section className="w-full max-w-md rounded-4xl border border-white/10 bg-white/8 p-4 shadow-2xl shadow-slate-950/40 backdrop-blur-xl sm:p-6 lg:p-8">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold text-white">Log in</h2>
           </div>

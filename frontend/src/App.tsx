@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import {
   clearAuthToken,
+  changePassword,
   getAuthToken,
   login,
   logout,
@@ -9,16 +10,20 @@ import {
   type AuthUser,
 } from "./api";
 import LoginPage from "./pages/LoginPage";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
 import PageAdmin from "./pages/pageAdmin";
 import PageSuperuser from "./pages/pageSuperuser";
 import PageUser from "./pages/pageUser";
 
 type View = "user" | "superuser" | "admin";
+type AuthState =
+  | "loading"
+  | "anonymous"
+  | "authenticated"
+  | "must_change_password";
 
 function App() {
-  const [authState, setAuthState] = useState<
-    "loading" | "anonymous" | "authenticated"
-  >("loading");
+  const [authState, setAuthState] = useState<AuthState>("loading");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
   const [authError, setAuthError] = useState<string | null>(null);
@@ -35,7 +40,11 @@ function App() {
     me()
       .then(({ user }) => {
         setCurrentUser(user);
-        setAuthState("authenticated");
+        setAuthState(
+          user.password_change_required
+            ? "must_change_password"
+            : "authenticated",
+        );
       })
       .catch(() => {
         clearAuthToken();
@@ -48,6 +57,19 @@ function App() {
     setAuthError(null);
 
     const response = await login({ identifier, password });
+    setCurrentUser(response.user);
+    setActiveView("user");
+    setAuthState(
+      response.user.password_change_required
+        ? "must_change_password"
+        : "authenticated",
+    );
+  }
+
+  async function handlePasswordChange(newPassword: string) {
+    setAuthError(null);
+
+    const response = await changePassword({ new_password: newPassword });
     setCurrentUser(response.user);
     setActiveView("user");
     setAuthState("authenticated");
@@ -85,6 +107,16 @@ function App() {
         error={authError}
         onLogin={handleLogin}
         onError={setAuthError}
+      />
+    );
+  }
+
+  if (authState === "must_change_password") {
+    return (
+      <ChangePasswordPage
+        error={authError}
+        onChangePassword={handlePasswordChange}
+        onCancel={handleLogout}
       />
     );
   }
