@@ -146,7 +146,7 @@ def process_workbook(upload, camp_name: str | None = None):
                 Participant.last_name == last,
             )
             if camp_id is not None:
-                existing = existing.filter(Participant.camp_id == camp_id)
+                existing = existing.filter(Participant.camps.any(Camp.id == camp_id))
 
             existing = existing.first()
 
@@ -159,6 +159,8 @@ def process_workbook(upload, camp_name: str | None = None):
                     birth_date = _parse_possible_date(birth_val)
 
                     new_p = Participant(name=first, last_name=last, phone_1=phone_1, phone_2=phone_2, camp_id=camp_id, birth_date=birth_date)
+                    if camp is not None:
+                        new_p.camps = [camp]
                     db.session.add(new_p)
                     created_participants += 1
             row += 1
@@ -191,6 +193,8 @@ def process_workbook(upload, camp_name: str | None = None):
                 # Only create if email or username not already present
                 if User.query.filter_by(email=email).first() is None and User.query.filter_by(username=username).first() is None:
                     u = User(username=username, email=email or None, camp_id=camp_id)
+                    if camp is not None:
+                        u.camps = [camp]
                     u.set_password(DEFAULT_IMPORTED_USER_PASSWORD)
                     u.password_change_required = True
                     db.session.add(u)

@@ -46,8 +46,11 @@ def create_diary(participant):
 	copy2(template_path, diary_path)
 	wb = load_workbook(filename=diary_path)
 
-	starting_date = getattr(getattr(participant, "camp", None), "start_date", None)
-	ending_date = getattr(getattr(participant, "camp", None), "end_date", None)
+	participant_camps = sorted(getattr(participant, "camps", []), key=lambda camp: camp.id)
+	primary_camp = participant_camps[0] if participant_camps else getattr(participant, "camp", None)
+
+	starting_date = getattr(primary_camp, "start_date", None)
+	ending_date = getattr(primary_camp, "end_date", None)
 	clock_use_count = 0
 
 	n_days = 0

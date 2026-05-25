@@ -3,17 +3,21 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 
 from extensions import db
-from models import Participant, Water, Urine, ClockUse
+from models import Camp, Participant, Water, Urine, ClockUse
 
 
-def resolve_participant(payload: dict, camp_id: int | None = None):
+def resolve_participant(payload: dict, camp_ids: list[int] | None = None):
+    scoped_camp_ids = set(camp_ids or [])
     participant_id = payload.get("participant_id")
     if participant_id is not None and str(participant_id).strip() != "":
         try:
             participant = db.session.get(Participant, int(participant_id))
         except (TypeError, ValueError):
             participant = None
-        if participant is not None and (camp_id is None or participant.camp_id == camp_id):
+        if participant is not None and (
+            not scoped_camp_ids
+            or any(camp.id in scoped_camp_ids for camp in participant.camps)
+        ):
             return participant
         return None
 
@@ -27,8 +31,8 @@ def resolve_participant(payload: dict, camp_id: int | None = None):
         Participant.name == name,
         Participant.last_name == last_name,
     )
-    if camp_id is not None:
-        query = query.filter(Participant.camp_id == camp_id)
+    if scoped_camp_ids:
+        query = query.filter(Participant.camps.any(Camp.id.in_(scoped_camp_ids)))
 
     return query.first()
 
@@ -58,6 +62,9 @@ def participant_activity_summary(p: Participant):
         ClockUse.created_at >= six_pm_today,
     ).scalar()
 
+    sorted_camps = sorted(p.camps, key=lambda camp: camp.id)
+    primary_camp = sorted_camps[0] if sorted_camps else None
+
     return {
         "id": p.id,
         "name": p.name,
@@ -66,8 +73,10 @@ def participant_activity_summary(p: Participant):
         "phone_1": p.phone_1,
         "phone_2": p.phone_2,
         "camp_id": p.camp_id,
-        "camp_code": p.camp.code if getattr(p, "camp", None) is not None else None,
-        "camp_name": p.camp.name if getattr(p, "camp", None) is not None else None,
+        "camp_ids": [camp.id for camp in sorted_camps],
+        "camp_code": primary_camp.code if primary_camp is not None else None,
+        "camp_name": primary_camp.name if primary_camp is not None else None,
+        "camps": [camp.to_dict() for camp in sorted_camps],
         "empty_diaper": p.empty_diaper,
         "drank_today": drank_today,
         "peed_today": peed_today,

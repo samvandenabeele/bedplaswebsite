@@ -7,6 +7,8 @@ export type AuthUser = {
   created_at: string;
   camp_id: number | null;
   camp: CampSummary | null;
+  camp_ids: number[];
+  camps: CampSummary[];
 };
 
 export type CampSummary = {
@@ -35,8 +37,10 @@ export type ParticipantSummary = {
   phone_1: string;
   phone_2: string | null;
   camp_id: number | null;
+  camp_ids: number[];
   camp_code: string | null;
   camp_name: string | null;
+  camps: CampSummary[];
   empty_diaper: number;
   drank_today: number;
   peed_today: number;
@@ -51,6 +55,8 @@ export type CounselorSummary = {
   role?: string;
   camp_id: number | null;
   camp: CampSummary | null;
+  camp_ids: number[];
+  camps: CampSummary[];
 };
 
 export type ExcelCounselorAccount = {
@@ -90,12 +96,13 @@ export type RegisterPayload = {
   email?: string;
   password: string;
   camp_id?: number;
+  camp_ids?: number[];
 };
 
 export type CreateUserPayload = RegisterPayload & { role?: string };
 
 export type UpdateUserPayload = Partial<
-  Pick<RegisterPayload, "username" | "email" | "camp_id">
+  Pick<RegisterPayload, "username" | "email" | "camp_id" | "camp_ids">
 > & {
   role?: string;
 };
@@ -115,6 +122,7 @@ export type ParticipantPayload = {
   birth_date?: string;
   empty_diaper?: number;
   camp_id?: number;
+  camp_ids?: number[];
 };
 
 export type ParticipantQuery = Partial<

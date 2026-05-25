@@ -83,16 +83,22 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
   const [campStatus, setCampStatus] = useState<string | null>(null);
   const [campActionKey, setCampActionKey] = useState<string | null>(null);
   const [downloadCampId, setDownloadCampId] = useState<number | "">(
-    currentUser?.camp_id ?? "",
+    currentUser?.camp_ids?.[0] ?? currentUser?.camp_id ?? "",
   );
   const [isDownloadingDiaries, setIsDownloadingDiaries] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
-  const [selectedParticipantCampId, setSelectedParticipantCampId] = useState<
-    number | ""
-  >(currentUser?.camp_id ?? "");
-  const [selectedAccountCampId, setSelectedAccountCampId] = useState<
-    number | ""
-  >(currentUser?.camp_id ?? "");
+  const [selectedParticipantCampIds, setSelectedParticipantCampIds] = useState<
+    number[]
+  >(
+    currentUser?.camp_ids ??
+      (currentUser?.camp_id ? [currentUser.camp_id] : []),
+  );
+  const [selectedAccountCampIds, setSelectedAccountCampIds] = useState<
+    number[]
+  >(
+    currentUser?.camp_ids ??
+      (currentUser?.camp_id ? [currentUser.camp_id] : []),
+  );
   const [campForm, setCampForm] = useState({
     code: "",
     name: "",
@@ -141,10 +147,16 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
     try {
       const response = await getCamps();
       setCamps(response.camps);
-      const defaultCampId = currentUser?.camp_id ?? response.camps[0]?.id ?? "";
-      setSelectedParticipantCampId(defaultCampId);
-      setSelectedAccountCampId(defaultCampId);
-      setDownloadCampId(defaultCampId);
+      const defaultCampIds = currentUser?.camp_ids?.length
+        ? currentUser.camp_ids
+        : currentUser?.camp_id
+          ? [currentUser.camp_id]
+          : response.camps[0]?.id
+            ? [response.camps[0].id]
+            : [];
+      setSelectedParticipantCampIds(defaultCampIds);
+      setSelectedAccountCampIds(defaultCampIds);
+      setDownloadCampId(defaultCampIds[0] ?? "");
     } catch (error) {
       setCampError(
         error instanceof Error ? error.message : "Failed to load camps.",
@@ -329,10 +341,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
         phone_2: participantForm.phone_2.trim() || undefined,
         birth_date: participantForm.birth_date || undefined,
         empty_diaper: Number(participantForm.empty_diaper) || 0,
-        camp_id:
-          selectedParticipantCampId === ""
-            ? undefined
-            : selectedParticipantCampId,
+        camp_ids: selectedParticipantCampIds,
       });
 
       setParticipantStatus("Participant added successfully.");
@@ -397,8 +406,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
         username: accountForm.username.trim(),
         email: accountForm.email.trim() || undefined,
         password: accountForm.password,
-        camp_id:
-          selectedAccountCampId === "" ? undefined : selectedAccountCampId,
+        camp_ids: selectedAccountCampIds,
         role,
       });
 
@@ -504,6 +512,24 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
   function formatCampLabel(camp: CampSummary) {
     const baseLabel = camp.name ? `${camp.name} (${camp.code})` : camp.code;
     return baseLabel;
+  }
+
+  function formatCampList(campList: CampSummary[] | undefined) {
+    if (!campList || campList.length === 0) {
+      return "-";
+    }
+    return campList.map((camp) => formatCampLabel(camp)).join(", ");
+  }
+
+  function readSelectedCampIds(event: ChangeEvent<HTMLSelectElement>) {
+    const selectedIds: number[] = [];
+    for (const option of Array.from(event.target.selectedOptions)) {
+      const parsed = Number(option.value);
+      if (Number.isInteger(parsed)) {
+        selectedIds.push(parsed);
+      }
+    }
+    return selectedIds;
   }
 
   function formatEntryType(kind: RecentEntry["kind"]) {
@@ -710,9 +736,9 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                   </div>
 
                   <div className="text-sm text-slate-300">
-                    {currentUser?.camp ? (
+                    {(currentUser?.camps?.length ?? 0) > 0 ? (
                       <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1.5 text-cyan-100">
-                        Camp-scoped user: {formatCampLabel(currentUser.camp)}
+                        Camp-scoped user: {formatCampList(currentUser?.camps)}
                       </span>
                     ) : (
                       <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-emerald-100">
@@ -1009,20 +1035,23 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
 
                 <label className="space-y-2">
                   <span className="text-sm font-medium text-slate-200">
-                    Camp
+                    Camps
                   </span>
-                  <CustomSelect<number>
-                    value={selectedAccountCampId}
-                    onChange={(next) => setSelectedAccountCampId(next)}
-                    options={camps.map((camp) => ({
-                      id: camp.id,
-                      label: formatCampLabel(camp),
-                    }))}
-                    placeholder={
-                      isLoadingCamps ? "Loading camps..." : "Select a camp"
+                  <select
+                    multiple
+                    value={selectedAccountCampIds.map(String)}
+                    onChange={(event) =>
+                      setSelectedAccountCampIds(readSelectedCampIds(event))
                     }
+                    className="min-h-32 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
                     disabled={isLoadingCamps || currentUser?.role !== "admin"}
-                  />
+                  >
+                    {camps.map((camp) => (
+                      <option key={camp.id} value={camp.id}>
+                        {formatCampLabel(camp)}
+                      </option>
+                    ))}
+                  </select>
                 </label>
 
                 <label className="space-y-2">
@@ -1153,9 +1182,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                               {counselor.email || "-"}
                             </td>
                             <td className="px-4 py-3 text-slate-300 sm:px-6">
-                              {counselor.camp?.name ||
-                                counselor.camp?.code ||
-                                "-"}
+                              {formatCampList(counselor.camps)}
                             </td>
                             <td className="px-4 py-3 text-slate-300 sm:px-6">
                               <CustomSelect<string>
@@ -1335,20 +1362,28 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
 
                   <label className="space-y-2 sm:col-span-2">
                     <span className="text-sm font-medium text-slate-200">
-                      Camp
+                      Camps
                     </span>
-                    <CustomSelect<number>
-                      value={selectedParticipantCampId}
-                      onChange={(next) => setSelectedParticipantCampId(next)}
-                      options={camps.map((camp) => ({
-                        id: camp.id,
-                        label: formatCampLabel(camp),
-                      }))}
-                      placeholder={
-                        isLoadingCamps ? "Loading camps..." : "Select a camp"
+                    <select
+                      multiple
+                      value={selectedParticipantCampIds.map(String)}
+                      onChange={(event) =>
+                        setSelectedParticipantCampIds(
+                          readSelectedCampIds(event),
+                        )
                       }
-                      disabled={isLoadingCamps || currentUser?.camp_id !== null}
-                    />
+                      className="min-h-32 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                      disabled={
+                        isLoadingCamps ||
+                        (currentUser?.camp_ids?.length ?? 0) > 0
+                      }
+                    >
+                      {camps.map((camp) => (
+                        <option key={camp.id} value={camp.id}>
+                          {formatCampLabel(camp)}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
 
@@ -1428,22 +1463,23 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
 
                   <label className="space-y-2">
                     <span className="text-sm font-medium text-slate-200">
-                      Camp
+                      Camps
                     </span>
-                    <CustomSelect<number>
-                      value={selectedAccountCampId}
-                      onChange={(next) => setSelectedAccountCampId(next)}
-                      options={camps.map((camp) => ({
-                        id: camp.id,
-                        label: camp.name
-                          ? `${camp.name} (${camp.code})`
-                          : camp.code,
-                      }))}
-                      placeholder={
-                        isLoadingCamps ? "Loading camps..." : "Select a camp"
+                    <select
+                      multiple
+                      value={selectedAccountCampIds.map(String)}
+                      onChange={(event) =>
+                        setSelectedAccountCampIds(readSelectedCampIds(event))
                       }
+                      className="min-h-32 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
                       disabled={isLoadingCamps || currentUser?.role !== "admin"}
-                    />
+                    >
+                      {camps.map((camp) => (
+                        <option key={camp.id} value={camp.id}>
+                          {formatCampLabel(camp)}
+                        </option>
+                      ))}
+                    </select>
                   </label>
 
                   <label className="space-y-2">
@@ -1567,9 +1603,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                             {counselor.email}
                           </td>
                           <td className="px-4 py-3 text-slate-300 sm:px-6">
-                            {counselor.camp?.name ||
-                              counselor.camp?.code ||
-                              "-"}
+                            {formatCampList(counselor.camps)}
                           </td>
                         </tr>
                       ))}
@@ -1617,10 +1651,18 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                       type="button"
                       onClick={() =>
                         void handleDownloadDiaries(
-                          currentUser?.camp_id ?? undefined,
+                          currentUser?.camp_ids?.[0] ??
+                            currentUser?.camp_id ??
+                            undefined,
                         )
                       }
-                      disabled={isDownloadingDiaries || !currentUser?.camp_id}
+                      disabled={
+                        isDownloadingDiaries ||
+                        !(
+                          (currentUser?.camp_ids?.[0] ??
+                            currentUser?.camp_id) != null
+                        )
+                      }
                       className="rounded-2xl border border-cyan-300/35 bg-cyan-300/15 px-4 py-2.5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/25 disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200"
                     >
                       {isDownloadingDiaries
@@ -1688,9 +1730,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                             {participant.name} {participant.last_name}
                           </td>
                           <td className="px-4 py-3 text-slate-300 sm:px-6">
-                            {participant.camp_name ||
-                              participant.camp_code ||
-                              "-"}
+                            {formatCampList(participant.camps)}
                           </td>
                           <td className="px-4 py-3 text-slate-300 sm:px-6">
                             {participant.birth_date

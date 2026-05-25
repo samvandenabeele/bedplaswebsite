@@ -19,60 +19,104 @@ from diaries import create_diary
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 
+def _current_user() -> User | None:
+    return getattr(g, "current_user", None)
+
+
+def _current_camp_ids() -> list[int]:
+    current_user = _current_user()
+    if current_user is None:
+        return []
+
+    membership_ids = sorted(
+        {camp.id for camp in getattr(current_user, "camps", []) if camp is not None}
+    )
+    if membership_ids:
+        return membership_ids
+
+    legacy_camp_id = getattr(current_user, "camp_id", None)
+    if legacy_camp_id is None:
+        return []
+
+    return [legacy_camp_id]
+
+
 def _current_camp_id() -> int | None:
-    current_user = getattr(g, "current_user", None)
-    return getattr(current_user, "camp_id", None)
+    camp_ids = _current_camp_ids()
+    return camp_ids[0] if camp_ids else None
+
+
+def _current_user_is_camp_scoped() -> bool:
+    current_user = _current_user()
+    if current_user is None:
+        return False
+    if getattr(current_user, "is_admin", False):
+        return False
+    return bool(_current_camp_ids())
+
+
+def _resolve_camps_from_payload(payload: dict, *, allow_empty: bool = True):
+    raw_camp_ids = payload.get("camp_ids")
+
+    if raw_camp_ids is None and "camp_id" in payload:
+        raw_camp_ids = [] if payload.get("camp_id") in (None, "") else [payload.get("camp_id")]
+
+    if raw_camp_ids is None:
+        selected_ids: list[int] = []
+    elif isinstance(raw_camp_ids, list):
+        selected_ids = []
+        for raw_id in raw_camp_ids:
+            try:
+                selected_ids.append(int(raw_id))
+            except (TypeError, ValueError):
+                return None, "camp_ids must contain only integers."
+    else:
+        return None, "camp_ids must be an array of integers."
+
+    selected_ids = sorted(set(selected_ids))
+
+    allowed_ids = set(_current_camp_ids()) if _current_user_is_camp_scoped() else None
+    if allowed_ids is not None:
+        if not selected_ids:
+            selected_ids = sorted(allowed_ids)
+        elif any(camp_id not in allowed_ids for camp_id in selected_ids):
+            return None, "Camp mismatch."
+
+    if not selected_ids:
+        if allow_empty:
+            return [], None
+        return None, "At least one camp is required."
+
+    camps = Camp.query.filter(Camp.id.in_(selected_ids)).order_by(Camp.id.asc()).all()
+    if len(camps) != len(selected_ids):
+        return None, "One or more camps were not found."
+
+    return camps, None
 
 
 def _participant_visible_to_current_user(participant: Participant | None) -> bool:
     if participant is None:
         return False
 
-    camp_id = _current_camp_id()
-    return camp_id is None or participant.camp_id == camp_id
+    if not _current_user_is_camp_scoped():
+        return True
+
+    allowed_camp_ids = set(_current_camp_ids())
+    return any(camp.id in allowed_camp_ids for camp in participant.camps)
 
 
 def _scoped_participant_query():
     query = Participant.query.filter(Participant.active.is_(True))
-    camp_id = _current_camp_id()
-    if camp_id is not None:
-        query = query.filter(Participant.camp_id == camp_id)
+    if _current_user_is_camp_scoped():
+        query = query.filter(Participant.camps.any(Camp.id.in_(_current_camp_ids())))
     return query
 
 
 def _scoped_user_query():
     query = User.query
-    camp_id = _current_camp_id()
-    if camp_id is not None:
-        query = query.filter(User.camp_id == camp_id)
+    if _current_user_is_camp_scoped():
+        query = query.filter(User.camps.any(Camp.id.in_(_current_camp_ids())))
     return query
-
-
-def _camp_for_user_payload(payload: dict):
-    current_camp_id = _current_camp_id()
-    payload_camp_id = payload.get("camp_id")
-
-    if current_camp_id is not None:
-        if payload_camp_id not in (None, "", current_camp_id):
-            try:
-                if int(payload_camp_id) != current_camp_id:
-                    return None, "Camp mismatch."
-            except (TypeError, ValueError):
-                return None, "Camp mismatch."
-        return db.session.get(Camp, current_camp_id), None
-
-    if payload_camp_id in (None, ""):
-        return None, None
-
-    try:
-        camp = db.session.get(Camp, int(payload_camp_id))
-    except (TypeError, ValueError):
-        camp = None
-
-    if camp is None:
-        return None, "Camp not found."
-
-    return camp, None
 
 
 def _parse_camp_date(value, field_name: str):
@@ -127,12 +171,14 @@ def register():
         return jsonify({"error": "Email already exists."}), 409
 
     # Always create regular users via the public register endpoint
-    camp, camp_error = _camp_for_user_payload(payload)
+    camps, camp_error = _resolve_camps_from_payload(payload)
     if camp_error is not None:
         return jsonify({"error": camp_error}), 400
 
-    user = User(username=username, email=email, camp_id=camp.id if camp is not None else None)
+    primary_camp_id = camps[0].id if camps else None
+    user = User(username=username, email=email, camp_id=primary_camp_id)
     user.set_password(password)
+    user.camps = camps
     db.session.add(user)
     db.session.commit()
 
@@ -199,10 +245,9 @@ def me():
 @api_bp.get("/camps")
 @require_auth
 def list_camps():
-    camp_id = _current_camp_id()
     query = Camp.query
-    if camp_id is not None:
-        query = query.filter(Camp.id == camp_id)
+    if _current_user_is_camp_scoped():
+        query = query.filter(Camp.id.in_(_current_camp_ids()))
 
     camps = query.order_by(Camp.created_at.desc()).all()
     return jsonify({"camps": [camp.to_dict() for camp in camps]})
@@ -326,19 +371,21 @@ def add_participants():
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
-    camp, camp_error = _camp_for_user_payload(payload)
+    camps, camp_error = _resolve_camps_from_payload(payload, allow_empty=False)
     if camp_error is not None:
         return jsonify({"error": camp_error}), 400
 
+    primary_camp_id = camps[0].id if camps else None
     new_participant = Participant(
         name=name,
         last_name=last_name,
         phone_1=phone_1,
         phone_2=phone_2,
         empty_diaper=diaper,
-        camp_id=camp.id if camp is not None else None,
+        camp_id=primary_camp_id,
         birth_date=birth_date,
     )
+    new_participant.camps = camps
     db.session.add(new_participant)
     db.session.commit()
     
@@ -372,20 +419,14 @@ def create_user():
         return jsonify({"error": "Only admins can create superuser or admin accounts."}), 403
 
     # Determine camp assignment
-    camp, camp_error = _camp_for_user_payload(payload)
+    camps, camp_error = _resolve_camps_from_payload(payload)
     if camp_error is not None:
         return jsonify({"error": camp_error}), 400
 
-    # If the creator is a superuser (not admin), they may only create users for their own camp
-    if getattr(current_user, "is_superuser", False) and not getattr(current_user, "is_admin", False):
-        # ensure camp matches creator's camp
-        if camp is None and current_user.camp_id is not None:
-            camp = db.session.get(Camp, current_user.camp_id)
-        elif camp is not None and camp.id != current_user.camp_id:
-            return jsonify({"error": "Superusers may only create accounts for their own camp."}), 403
-
-    new_user = User(username=username, email=email, camp_id=camp.id if camp is not None else None, role=role)
+    primary_camp_id = camps[0].id if camps else None
+    new_user = User(username=username, email=email, camp_id=primary_camp_id, role=role)
     new_user.set_password(password)
+    new_user.camps = camps
     db.session.add(new_user)
     db.session.commit()
 
@@ -430,24 +471,17 @@ def update_user(user_id: int):
             user.username = username
             updates_applied = True
 
-    if "camp_id" in payload:
-        camp_id = payload.get("camp_id")
-        if camp_id in (None, ""):
-            if user.camp_id is not None:
-                user.camp_id = None
-                updates_applied = True
-        else:
-            try:
-                resolved_camp_id = int(camp_id)
-            except (TypeError, ValueError):
-                return jsonify({"error": "camp_id must be an integer."}), 400
+    if "camp_ids" in payload or "camp_id" in payload:
+        camps, camp_error = _resolve_camps_from_payload(payload)
+        if camp_error is not None:
+            return jsonify({"error": camp_error}), 400
 
-            camp = db.session.get(Camp, resolved_camp_id)
-            if camp is None:
-                return jsonify({"error": "Camp not found."}), 404
-            if user.camp_id != camp.id:
-                user.camp_id = camp.id
-                updates_applied = True
+        next_camp_ids = [camp.id for camp in camps]
+        previous_camp_ids = [camp.id for camp in sorted(user.camps, key=lambda camp: camp.id)]
+        if next_camp_ids != previous_camp_ids:
+            user.camps = camps
+            user.camp_id = camps[0].id if camps else None
+            updates_applied = True
 
     if not updates_applied:
         return jsonify({"error": "No valid updates provided."}), 400
@@ -527,6 +561,8 @@ def query_counselor():
                 "active": c.active,
                 "camp_id": c.camp_id,
                 "camp": c.camp.to_dict() if getattr(c, "camp", None) is not None else None,
+                "camp_ids": [camp.id for camp in sorted(c.camps, key=lambda camp: camp.id)],
+                "camps": [camp.to_dict() for camp in sorted(c.camps, key=lambda camp: camp.id)],
             }
             for c in counselors
         ]
@@ -537,7 +573,7 @@ def query_counselor():
 @require_auth
 def update_empty_diaper():
     payload = request.get_json(silent=True) or {}
-    participant = resolve_participant(payload, _current_camp_id())
+    participant = resolve_participant(payload, _current_camp_ids())
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
@@ -569,7 +605,7 @@ def add_water():
     payload = request.get_json(silent=True) or {}
     meal = bool(payload.get("meal"))
 
-    participant = resolve_participant(payload, _current_camp_id())
+    participant = resolve_participant(payload, _current_camp_ids())
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
@@ -588,7 +624,7 @@ def add_urine():
     note = str(payload.get("note", "")).strip() or None
     faeces = bool(payload.get("faeces"))
 
-    participant = resolve_participant(payload, _current_camp_id())
+    participant = resolve_participant(payload, _current_camp_ids())
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
@@ -606,7 +642,7 @@ def add_diaper():
     weight = int(payload.get("weight"))
     note = str(payload.get("note", "")).strip() or None
 
-    participant = resolve_participant(payload, _current_camp_id())
+    participant = resolve_participant(payload, _current_camp_ids())
 
     if participant is None:
         return jsonify({"error": "Participant not found."}), 404
@@ -724,10 +760,9 @@ def recent_entries():
 
     limit = min(limit, 300)
 
-    camp_id = _current_camp_id()
     participant_query = Participant.query
-    if camp_id is not None:
-        participant_query = participant_query.filter(Participant.camp_id == camp_id)
+    if _current_user_is_camp_scoped():
+        participant_query = participant_query.filter(Participant.camps.any(Camp.id.in_(_current_camp_ids())))
 
     scoped_participant_ids = [row[0] for row in participant_query.with_entities(Participant.id).all()]
     if not scoped_participant_ids:
@@ -748,6 +783,12 @@ def recent_entries():
         for participant in participants
     }
 
+    def _primary_participant_camp(participant: Participant | None):
+        if participant is None:
+            return None
+        camps = sorted(participant.camps, key=lambda camp: camp.id)
+        return camps[0] if camps else None
+
     merged_entries = [
         {
             "id": entry.id,
@@ -759,14 +800,17 @@ def recent_entries():
             "participant_last_name": participant_by_id.get(entry.participant_id).last_name
             if participant_by_id.get(entry.participant_id)
             else "",
-            "participant_camp_id": participant_by_id.get(entry.participant_id).camp_id
+            "participant_camp_id": _primary_participant_camp(participant_by_id.get(entry.participant_id)).id
             if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
-            "participant_camp_code": participant_by_id.get(entry.participant_id).camp.code
-            if participant_by_id.get(entry.participant_id) and getattr(participant_by_id.get(entry.participant_id), "camp", None) is not None
+            "participant_camp_code": _primary_participant_camp(participant_by_id.get(entry.participant_id)).code
+            if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
-            "participant_camp_name": participant_by_id.get(entry.participant_id).camp.name
-            if participant_by_id.get(entry.participant_id) and getattr(participant_by_id.get(entry.participant_id), "camp", None) is not None
+            "participant_camp_name": _primary_participant_camp(participant_by_id.get(entry.participant_id)).name
+            if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "meal": entry.meal,
@@ -786,14 +830,17 @@ def recent_entries():
             "participant_last_name": participant_by_id.get(entry.participant_id).last_name
             if participant_by_id.get(entry.participant_id)
             else "",
-            "participant_camp_id": participant_by_id.get(entry.participant_id).camp_id
+            "participant_camp_id": _primary_participant_camp(participant_by_id.get(entry.participant_id)).id
             if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
-            "participant_camp_code": participant_by_id.get(entry.participant_id).camp.code
-            if participant_by_id.get(entry.participant_id) and getattr(participant_by_id.get(entry.participant_id), "camp", None) is not None
+            "participant_camp_code": _primary_participant_camp(participant_by_id.get(entry.participant_id)).code
+            if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
-            "participant_camp_name": participant_by_id.get(entry.participant_id).camp.name
-            if participant_by_id.get(entry.participant_id) and getattr(participant_by_id.get(entry.participant_id), "camp", None) is not None
+            "participant_camp_name": _primary_participant_camp(participant_by_id.get(entry.participant_id)).name
+            if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "meal": None,
@@ -813,14 +860,17 @@ def recent_entries():
             "participant_last_name": participant_by_id.get(entry.participant_id).last_name
             if participant_by_id.get(entry.participant_id)
             else "",
-            "participant_camp_id": participant_by_id.get(entry.participant_id).camp_id
+            "participant_camp_id": _primary_participant_camp(participant_by_id.get(entry.participant_id)).id
             if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
-            "participant_camp_code": participant_by_id.get(entry.participant_id).camp.code
-            if participant_by_id.get(entry.participant_id) and getattr(participant_by_id.get(entry.participant_id), "camp", None) is not None
+            "participant_camp_code": _primary_participant_camp(participant_by_id.get(entry.participant_id)).code
+            if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
-            "participant_camp_name": participant_by_id.get(entry.participant_id).camp.name
-            if participant_by_id.get(entry.participant_id) and getattr(participant_by_id.get(entry.participant_id), "camp", None) is not None
+            "participant_camp_name": _primary_participant_camp(participant_by_id.get(entry.participant_id)).name
+            if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "meal": None,
@@ -840,14 +890,17 @@ def recent_entries():
             "participant_last_name": participant_by_id.get(entry.participant_id).last_name
             if participant_by_id.get(entry.participant_id)
             else "",
-            "participant_camp_id": participant_by_id.get(entry.participant_id).camp_id
+            "participant_camp_id": _primary_participant_camp(participant_by_id.get(entry.participant_id)).id
             if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
-            "participant_camp_code": participant_by_id.get(entry.participant_id).camp.code
-            if participant_by_id.get(entry.participant_id) and getattr(participant_by_id.get(entry.participant_id), "camp", None) is not None
+            "participant_camp_code": _primary_participant_camp(participant_by_id.get(entry.participant_id)).code
+            if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
-            "participant_camp_name": participant_by_id.get(entry.participant_id).camp.name
-            if participant_by_id.get(entry.participant_id) and getattr(participant_by_id.get(entry.participant_id), "camp", None) is not None
+            "participant_camp_name": _primary_participant_camp(participant_by_id.get(entry.participant_id)).name
+            if participant_by_id.get(entry.participant_id)
+            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
             else None,
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "meal": None,
@@ -1010,7 +1063,7 @@ def download_diaries():
     current_user = getattr(g, "current_user", None)
 
     if camp_id is None:
-        camp_id = getattr(current_user, "camp_id", None)
+        camp_id = _current_camp_id()
 
     if camp_id is None:
         return jsonify({"error": "Camp ID is required."}), 400
@@ -1019,13 +1072,12 @@ def download_diaries():
     if camp is None:
         return jsonify({"error": "Camp not found."}), 404
 
-    if getattr(current_user, "is_superuser", False) and not getattr(current_user, "is_admin", False):
-        if current_user.camp_id != camp_id:
+    if _current_user_is_camp_scoped() and camp_id not in set(_current_camp_ids()):
             return jsonify({"error": "Superusers can only download diaries for their own camp."}), 403
 
     participants = (
         db.session.query(Participant)
-        .filter(Participant.camp_id == camp_id)
+        .filter(Participant.camps.any(Camp.id == camp_id))
         .order_by(Participant.last_name, Participant.name, Participant.id)
         .all()
     )

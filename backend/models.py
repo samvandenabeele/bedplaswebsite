@@ -5,6 +5,20 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from extensions import db
 
 
+user_camps = db.Table(
+    "user_camps",
+    db.Column("user_id", db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True),
+    db.Column("camp_id", db.Integer, db.ForeignKey("camp.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+participant_camps = db.Table(
+    "participant_camps",
+    db.Column("participant_id", db.Integer, db.ForeignKey("participant.id", ondelete="CASCADE"), primary_key=True),
+    db.Column("camp_id", db.Integer, db.ForeignKey("camp.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Camp(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(64), unique=True, nullable=False, index=True)
@@ -16,6 +30,18 @@ class Camp(db.Model):
     active = db.Column(db.Boolean, default=True)
     users = db.relationship("User", backref="camp", lazy=True)
     participants = db.relationship("Participant", backref="camp", lazy=True)
+    member_users = db.relationship(
+        "User",
+        secondary=user_camps,
+        back_populates="camps",
+        lazy="selectin",
+    )
+    member_participants = db.relationship(
+        "Participant",
+        secondary=participant_camps,
+        back_populates="camps",
+        lazy="selectin",
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -27,8 +53,8 @@ class Camp(db.Model):
             "end_date": self.end_date.isoformat() if self.end_date is not None else None,
             "created_at": self.created_at.isoformat(),
             "active": self.active,
-            "participant_count": len(self.participants),
-            "counselor_count": len(self.users),
+            "participant_count": len(self.member_participants),
+            "counselor_count": len(self.member_users),
         }
 
 
@@ -44,6 +70,12 @@ class User(db.Model):
     camp_id = db.Column(db.Integer, db.ForeignKey("camp.id"), nullable=True, index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     active = db.Column(db.Boolean, default=True)
+    camps = db.relationship(
+        "Camp",
+        secondary=user_camps,
+        back_populates="member_users",
+        lazy="selectin",
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -52,6 +84,7 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def to_dict(self) -> dict:
+        sorted_camps = sorted(self.camps, key=lambda camp: camp.id)
         return {
             "id": self.id,
             "username": self.username,
@@ -61,6 +94,8 @@ class User(db.Model):
             "created_at": self.created_at.isoformat(),
             "camp_id": self.camp_id,
             "camp": self.camp.to_dict() if getattr(self, "camp", None) is not None else None,
+            "camp_ids": [camp.id for camp in sorted_camps],
+            "camps": [camp.to_dict() for camp in sorted_camps],
         }
 
     @property
@@ -84,6 +119,12 @@ class Participant(db.Model):
     active = db.Column(db.Boolean, default=True)
     empty_diaper = db.Column(db.Integer, nullable=False, default=0)
     note = db.Column(db.Text, nullable=True)
+    camps = db.relationship(
+        "Camp",
+        secondary=participant_camps,
+        back_populates="member_participants",
+        lazy="selectin",
+    )
 
 
 def default_empty_weight(context):

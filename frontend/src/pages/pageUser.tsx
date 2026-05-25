@@ -436,9 +436,12 @@ function PageUser({ currentUser }: PageUserProps) {
           <p className="text-sm text-slate-400">
             Kies eerst het kind, voeg daarna meteen water, plas of luier toe.
           </p>
-          {currentUser?.camp ? (
+          {(currentUser?.camps?.length ?? 0) > 0 ? (
             <div className="pt-1 text-xs text-cyan-200">
-              Huidig kamp: {currentUser.camp.name || currentUser.camp.code}
+              Huidige kampen:{" "}
+              {currentUser?.camps
+                .map((camp) => camp.name || camp.code)
+                .join(", ")}
             </div>
           ) : null}
         </div>

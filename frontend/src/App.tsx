@@ -139,9 +139,12 @@ function App() {
                   {currentUser?.username}
                 </span>
               </p>
-              {currentUser?.camp ? (
+              {(currentUser?.camps?.length ?? 0) > 0 ? (
                 <p className="mt-1 text-xs text-cyan-200 sm:text-sm">
-                  Camp: {currentUser.camp.name || currentUser.camp.code}
+                  Camps:{" "}
+                  {currentUser?.camps
+                    .map((camp) => camp.name || camp.code)
+                    .join(", ")}
                 </p>
               ) : null}
             </div>
