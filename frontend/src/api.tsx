@@ -94,6 +94,12 @@ export type RegisterPayload = {
 
 export type CreateUserPayload = RegisterPayload & { role?: string };
 
+export type UpdateUserPayload = Partial<
+  Pick<RegisterPayload, "username" | "email" | "camp_id">
+> & {
+  role?: string;
+};
+
 export type LoginPayload = {
   identifier?: string;
   username?: string;
@@ -300,6 +306,13 @@ export function register(payload: RegisterPayload) {
 export function createUser(payload: CreateUserPayload) {
   return request<{ user: AuthUser }>("/users", {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateUser(userId: number, payload: UpdateUserPayload) {
+  return request<{ user: AuthUser }>(`/users/${userId}`, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }

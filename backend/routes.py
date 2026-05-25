@@ -391,6 +391,70 @@ def create_user():
 
     return jsonify({"user": new_user.to_dict()}), 201
 
+
+@api_bp.patch("/users/<int:user_id>")
+@require_auth
+def update_user(user_id: int):
+    if not _require_global_admin():
+        return jsonify({"error": "Only admins can update user accounts."}), 403
+
+    user = db.session.get(User, user_id)
+    if user is None:
+        return jsonify({"error": "User not found."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    updates_applied = False
+
+    if "role" in payload:
+        role = str(payload.get("role", "")).strip().lower()
+        if role not in ("user", "superuser", "admin"):
+            return jsonify({"error": "Invalid role."}), 400
+        user.role = role
+        updates_applied = True
+
+    if "email" in payload:
+        email = str(payload.get("email", "")).strip().lower() or None
+        if email != user.email:
+            if email and User.query.filter(User.email == email, User.id != user.id).first() is not None:
+                return jsonify({"error": "Email already exists."}), 409
+            user.email = email
+            updates_applied = True
+
+    if "username" in payload:
+        username = str(payload.get("username", "")).strip().lower()
+        if not username:
+            return jsonify({"error": "username cannot be empty."}), 400
+        if username != user.username:
+            if User.query.filter(User.username == username, User.id != user.id).first() is not None:
+                return jsonify({"error": "Username already exists."}), 409
+            user.username = username
+            updates_applied = True
+
+    if "camp_id" in payload:
+        camp_id = payload.get("camp_id")
+        if camp_id in (None, ""):
+            if user.camp_id is not None:
+                user.camp_id = None
+                updates_applied = True
+        else:
+            try:
+                resolved_camp_id = int(camp_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "camp_id must be an integer."}), 400
+
+            camp = db.session.get(Camp, resolved_camp_id)
+            if camp is None:
+                return jsonify({"error": "Camp not found."}), 404
+            if user.camp_id != camp.id:
+                user.camp_id = camp.id
+                updates_applied = True
+
+    if not updates_applied:
+        return jsonify({"error": "No valid updates provided."}), 400
+
+    db.session.commit()
+    return jsonify({"user": user.to_dict()})
+
 @api_bp.route("/delParticipant", methods=["POST"])
 @require_auth
 def del_participant():

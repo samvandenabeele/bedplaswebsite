@@ -14,6 +14,7 @@ import {
   getRecentEntries,
   queryParticipants,
   createUser,
+  updateUser,
   updateEntry,
   updateCamp,
   uploadParticipantsCounselorsExcel,
@@ -51,6 +52,13 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
   const [counselors, setCounselors] = useState<CounselorSummary[]>([]);
   const [isLoadingCounselors, setIsLoadingCounselors] = useState(true);
   const [counselorError, setCounselorError] = useState<string | null>(null);
+  const [counselorStatus, setCounselorStatus] = useState<string | null>(null);
+  const [counselorActionKey, setCounselorActionKey] = useState<string | null>(
+    null,
+  );
+  const [counselorRoleDrafts, setCounselorRoleDrafts] = useState<
+    Record<number, string>
+  >({});
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [isLoadingRecentEntries, setIsLoadingRecentEntries] = useState(true);
   const [recentEntriesError, setRecentEntriesError] = useState<string | null>(
@@ -228,6 +236,14 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
     try {
       const response = await queryCounselors();
       setCounselors(response.counselors);
+      setCounselorRoleDrafts(
+        Object.fromEntries(
+          response.counselors.map((counselor) => [
+            counselor.id,
+            counselor.role ?? "user",
+          ]),
+        ),
+      );
     } catch (error) {
       setCounselorError(
         error instanceof Error ? error.message : "Failed to load counselors.",
@@ -239,6 +255,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
 
   useEffect(() => {
     if (isAdminPanel) {
+      void loadCounselors();
       return;
     }
 
@@ -290,7 +307,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
 
   async function handleRefresh() {
     if (isAdminPanel) {
-      await loadCamps();
+      await Promise.all([loadCamps(), loadCounselors()]);
       return;
     }
 
@@ -332,6 +349,35 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
       setParticipantError(
         error instanceof Error ? error.message : "Failed to add participant.",
       );
+    }
+  }
+
+  async function handleCounselorRoleSave(counselor: CounselorSummary) {
+    const nextRole =
+      counselorRoleDrafts[counselor.id] ?? counselor.role ?? "user";
+
+    if (nextRole === (counselor.role ?? "user")) {
+      setCounselorStatus(
+        `${counselor.username} already has the selected role.`,
+      );
+      return;
+    }
+
+    const rowKey = `counselor-${counselor.id}`;
+    setCounselorActionKey(rowKey);
+    setCounselorStatus(null);
+    setCounselorError(null);
+
+    try {
+      await updateUser(counselor.id, { role: nextRole });
+      setCounselorStatus(`${counselor.username} updated to ${nextRole}.`);
+      await loadCounselors();
+    } catch (error) {
+      setCounselorError(
+        error instanceof Error ? error.message : "Failed to update user role.",
+      );
+    } finally {
+      setCounselorActionKey(null);
     }
   }
 
@@ -1048,6 +1094,113 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                   ) : null}
                 </div>
               </form>
+            </section>
+
+            <section className="mb-6 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 shadow-lg shadow-cyan-950/20">
+              <div className="flex flex-col gap-4 border-b border-white/10 px-5 py-4 sm:px-6 sm:py-5">
+                <div className="space-y-1">
+                  <h3 className="text-lg font-semibold text-white">
+                    User roles
+                  </h3>
+                  <p className="text-sm text-slate-400">
+                    Promote a regular user to superuser or admin, or demote an
+                    existing account.
+                  </p>
+                </div>
+                {counselorStatus ? (
+                  <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+                    {counselorStatus}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="overflow-x-auto">
+                {isLoadingCounselors ? (
+                  <div className="px-5 py-8 text-sm text-slate-300 sm:px-6">
+                    Loading users...
+                  </div>
+                ) : counselors.length === 0 ? (
+                  <div className="px-5 py-8 text-sm text-slate-300 sm:px-6">
+                    No users found.
+                  </div>
+                ) : (
+                  <table className="min-w-full divide-y divide-white/10 text-left text-sm text-slate-200">
+                    <thead className="bg-white/5 text-[0.7rem] uppercase tracking-[0.16em] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3 font-medium sm:px-6">Name</th>
+                        <th className="px-4 py-3 font-medium sm:px-6">Email</th>
+                        <th className="px-4 py-3 font-medium sm:px-6">Camp</th>
+                        <th className="px-4 py-3 font-medium sm:px-6">Role</th>
+                        <th className="px-4 py-3 font-medium sm:px-6">
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {counselors.map((counselor) => {
+                        const rowKey = `counselor-${counselor.id}`;
+                        const isBusy = counselorActionKey === rowKey;
+                        const selectedRole =
+                          counselorRoleDrafts[counselor.id] ??
+                          counselor.role ??
+                          "user";
+                        return (
+                          <tr key={counselor.id} className="hover:bg-white/3">
+                            <td className="px-4 py-3 font-medium text-white sm:px-6">
+                              {counselor.username}
+                            </td>
+                            <td className="px-4 py-3 text-slate-300 sm:px-6">
+                              {counselor.email || "-"}
+                            </td>
+                            <td className="px-4 py-3 text-slate-300 sm:px-6">
+                              {counselor.camp?.name ||
+                                counselor.camp?.code ||
+                                "-"}
+                            </td>
+                            <td className="px-4 py-3 text-slate-300 sm:px-6">
+                              <CustomSelect<string>
+                                value={selectedRole}
+                                onChange={(next) =>
+                                  setCounselorRoleDrafts((current) => ({
+                                    ...current,
+                                    [counselor.id]: next,
+                                  }))
+                                }
+                                options={[
+                                  { id: "user", label: "User" },
+                                  { id: "superuser", label: "Superuser" },
+                                  { id: "admin", label: "Admin" },
+                                ]}
+                              />
+                            </td>
+                            <td className="px-4 py-3 sm:px-6">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleCounselorRoleSave(counselor)
+                                }
+                                disabled={
+                                  isBusy ||
+                                  selectedRole === (counselor.role ?? "user")
+                                }
+                                className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {isBusy ? "Saving..." : "Save role"}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {counselorError && !isLoadingCounselors ? (
+                <div className="border-t border-white/10 px-5 py-3 text-sm text-rose-100 sm:px-6">
+                  {counselorError}
+                </div>
+              ) : null}
             </section>
           </>
         ) : null}
