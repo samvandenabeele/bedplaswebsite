@@ -1,0 +1,61 @@
+## Add your compose file here
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bedplas
+      POSTGRES_USER: bedplas
+      POSTGRES_PASSWORD: bedplas
+    volumes:
+      - bedplas-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bedplas -d bedplas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: ghcr.io/samvandenabeele/bedplaswebsite-backend:v1.3.1
+    environment:
+      DATABASE_URL: postgresql+psycopg2://bedplas:bedplas@db:5432/bedplas
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      AUTH_TOKEN_MAX_AGE: ${AUTH_TOKEN_MAX_AGE:-604800}
+      CORS_ORIGINS: http://localhost:8080
+      PORT: 8000
+      DEFAULT_USER_USERNAME: admin
+      DEFAULT_USER_PASSWORD: change-me
+      DEFAULT_USER_EMAIL: admin@example.com
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/samvandenabeele/bedplaswebsite-frontend:v1.3.1
+    depends_on:
+      backend:
+        condition: service_started
+
+  splash:
+    image: thesuhu/docker-maintenance-page:latest
+    container_name: splash
+    environment:
+      TITLE: "My Website"
+      HEADING_TITLE: "Launching Soon"
+      MESSAGE: "We're building something new."
+      THEME: "dark"
+      MAIL_ADDRESS: sam.vandenabeele.09@gmail.com
+      RESPONSE_CODE: "503 Service Unavailable"
+      PORT: 8080
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token eyJhIjoiMmJmNjljOTViOGM3YTQ1NGRhN2QyMGFiODRkNzUxMzEiLCJ0IjoiOTU0NzBiOWItZjlkNy00MDI0LTgzNTItNTcyZTk0MTJiOWRkIiwicyI6Ik9HSTBOekF3TnpFdE1qazJPQzAwTWpVeUxXRm1ZamN0TlRZd09XRXdNMlV6TWpRMiJ9
+    depends_on:
+      - backend
+      - frontend
+      - splash
+
+volumes:
+  bedplas-postgres:

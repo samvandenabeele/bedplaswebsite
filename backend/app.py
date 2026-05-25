@@ -1,7 +1,7 @@
 import os
 
 from flask import Flask, jsonify, request, send_from_directory
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import SQLAlchemyError
 
 from config import Config
 from extensions import db, migrate
@@ -37,13 +37,16 @@ def create_app(config_class=Config):
     def api_root():
         return jsonify({"message": "BedPlas API"})
 
+    return app
+
+
+def bootstrap_database(app: Flask) -> None:
     with app.app_context():
         # Ensure the database schema exists before any startup bootstrap queries run.
-        # This makes the app safe to start against a fresh Postgres volume.
+        # This is intentionally executed once, outside the Gunicorn worker model.
         db.create_all()
 
         # Create a default user from environment variables if provided.
-        # This is useful for local development so an admin user exists.
         default_username = os.environ.get("DEFAULT_USER_USERNAME")
         default_password = os.environ.get("DEFAULT_USER_PASSWORD")
         default_email = os.environ.get("DEFAULT_USER_EMAIL")
@@ -52,44 +55,33 @@ def create_app(config_class=Config):
             try:
                 from models import User
 
-                # Default the bootstrap account to admin unless an explicit role is provided.
                 default_role = os.environ.get("DEFAULT_USER_ROLE", "admin")
-
-                existing = User.query.filter_by(username=default_username).first()
+                existing = db.session.query(User.id).filter_by(username=default_username).first()
                 if existing is None:
                     user = User(username=default_username, email=default_email or None)
                     user.set_password(default_password)
-                    # set role if model supports it
                     try:
                         user.role = default_role
                     except Exception:
-                        # ignore if attribute missing
                         pass
                     db.session.add(user)
                     db.session.commit()
                     app.logger.info("Created default user '%s' with role '%s'", default_username, default_role)
-                elif getattr(existing, "role", None) != default_role:
-                    try:
-                        existing.role = default_role
-                    except Exception:
-                        pass
-                    db.session.commit()
-                    app.logger.info("Updated default user '%s' to role '%s'", default_username, default_role)
-            except OperationalError:
-                # If the DB schema is not yet in sync (e.g. running migrations), skip creating
-                # the default user to avoid breaking CLI commands like `flask db migrate`.
+                else:
+                    app.logger.info("Default user '%s' already exists; skipping bootstrap creation.", default_username)
+            except SQLAlchemyError:
+                db.session.rollback()
                 app.logger.warning(
                     "Skipping creation of default user '%s' because the database schema is not ready.",
                     default_username,
                 )
-
-    return app
 
 
 app = create_app()
 
 
 if __name__ == "__main__":
+    bootstrap_database(app)
     app.run(
         host=os.environ.get("HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "8000")),
