@@ -83,6 +83,8 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
     code: "",
     name: "",
     source_header: "",
+    start_date: "",
+    end_date: "",
   });
 
   const [participantForm, setParticipantForm] = useState({
@@ -146,10 +148,18 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
         code: campForm.code.trim(),
         name: campForm.name.trim() || undefined,
         source_header: campForm.source_header.trim() || undefined,
+        start_date: campForm.start_date || undefined,
+        end_date: campForm.end_date || undefined,
       });
 
       setCampStatus("Camp created successfully.");
-      setCampForm({ code: "", name: "", source_header: "" });
+      setCampForm({
+        code: "",
+        name: "",
+        source_header: "",
+        start_date: "",
+        end_date: "",
+      });
       await loadCamps();
     } catch (error) {
       setCampError(
@@ -378,6 +388,45 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
     }).format(date);
   }
 
+  function formatCampDate(dateValue: string | null) {
+    if (!dateValue) {
+      return "-";
+    }
+
+    const date = new Date(`${dateValue}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+      return "-";
+    }
+
+    return new Intl.DateTimeFormat("nl-BE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(date);
+  }
+
+  function formatCampDateRange(camp: CampSummary) {
+    if (camp.start_date && camp.end_date) {
+      return `${formatCampDate(camp.start_date)} – ${formatCampDate(camp.end_date)}`;
+    }
+
+    if (camp.start_date) {
+      return `Vanaf ${formatCampDate(camp.start_date)}`;
+    }
+
+    if (camp.end_date) {
+      return `Tot ${formatCampDate(camp.end_date)}`;
+    }
+
+    return "-";
+  }
+
+  function formatCampLabel(camp: CampSummary) {
+    const baseLabel = camp.name ? `${camp.name} (${camp.code})` : camp.code;
+    const dateRange = formatCampDateRange(camp);
+    return dateRange === "-" ? baseLabel : `${baseLabel} · ${dateRange}`;
+  }
+
   function formatEntryType(kind: RecentEntry["kind"]) {
     if (kind === "water") {
       return "Water";
@@ -576,16 +625,15 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                       Camp management
                     </h3>
                     <p className="text-sm text-slate-400">
-                      Create camps and review how many counselors and
-                      participants belong to each one.
+                      Create camps, review their vacation dates, and see how
+                      many counselors and participants belong to each one.
                     </p>
                   </div>
 
                   <div className="text-sm text-slate-300">
                     {currentUser?.camp ? (
                       <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1.5 text-cyan-100">
-                        Camp-scoped user:{" "}
-                        {currentUser.camp.name || currentUser.camp.code}
+                        Camp-scoped user: {formatCampLabel(currentUser.camp)}
                       </span>
                     ) : (
                       <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-emerald-100">
@@ -660,6 +708,42 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                     />
                   </label>
 
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="space-y-2 block">
+                      <span className="text-sm font-medium text-slate-200">
+                        Start date
+                      </span>
+                      <input
+                        value={campForm.start_date}
+                        onChange={(event) =>
+                          setCampForm((current) => ({
+                            ...current,
+                            start_date: event.target.value,
+                          }))
+                        }
+                        type="date"
+                        className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                      />
+                    </label>
+
+                    <label className="space-y-2 block">
+                      <span className="text-sm font-medium text-slate-200">
+                        End date
+                      </span>
+                      <input
+                        value={campForm.end_date}
+                        onChange={(event) =>
+                          setCampForm((current) => ({
+                            ...current,
+                            end_date: event.target.value,
+                          }))
+                        }
+                        type="date"
+                        className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20"
+                      />
+                    </label>
+                  </div>
+
                   <button
                     type="submit"
                     disabled={currentUser?.role !== "admin"}
@@ -684,6 +768,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                         <tr>
                           <th className="px-4 py-3 font-medium">Code</th>
                           <th className="px-4 py-3 font-medium">Name</th>
+                          <th className="px-4 py-3 font-medium">Dates</th>
                           <th className="px-4 py-3 font-medium">People</th>
                           <th className="px-4 py-3 font-medium">Status</th>
                           <th className="px-4 py-3 font-medium">Action</th>
@@ -705,6 +790,14 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                                     {camp.source_header}
                                   </div>
                                 ) : null}
+                              </td>
+                              <td className="px-4 py-3 text-slate-300">
+                                <div>{formatCampDateRange(camp)}</div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {camp.start_date || camp.end_date
+                                    ? `${camp.start_date ? formatCampDate(camp.start_date) : "-"} → ${camp.end_date ? formatCampDate(camp.end_date) : "-"}`
+                                    : "Dates not set"}
+                                </div>
                               </td>
                               <td className="px-4 py-3 text-slate-300">
                                 <div>{camp.participant_count} participants</div>
@@ -800,9 +893,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                     onChange={(next) => setSelectedAccountCampId(next)}
                     options={camps.map((camp) => ({
                       id: camp.id,
-                      label: camp.name
-                        ? `${camp.name} (${camp.code})`
-                        : camp.code,
+                      label: formatCampLabel(camp),
                     }))}
                     placeholder={
                       isLoadingCamps ? "Loading camps..." : "Select a camp"
@@ -1003,9 +1094,7 @@ function AdminSections({ currentUser, panel }: AdminSectionsProps) {
                       onChange={(next) => setSelectedParticipantCampId(next)}
                       options={camps.map((camp) => ({
                         id: camp.id,
-                        label: camp.name
-                          ? `${camp.name} (${camp.code})`
-                          : camp.code,
+                        label: formatCampLabel(camp),
                       }))}
                       placeholder={
                         isLoadingCamps ? "Loading camps..." : "Select a camp"

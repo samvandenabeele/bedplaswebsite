@@ -47,9 +47,17 @@ def create_app(config_class=Config):
                 row[1]
                 for row in db.session.execute(text("PRAGMA table_info(participant)"))
             }
+            existing_camp_columns = {
+                row[1]
+                for row in db.session.execute(text("PRAGMA table_info(camp)"))
+            }
             existing_user_columns = {
                 row[1]
                 for row in db.session.execute(text("PRAGMA table_info(user)"))
+            }
+            camp_columns = {
+                "start_date": "ALTER TABLE camp ADD COLUMN start_date DATE",
+                "end_date": "ALTER TABLE camp ADD COLUMN end_date DATE",
             }
             participant_columns = {
                 "date_added": "ALTER TABLE participant ADD COLUMN date_added DATETIME",
@@ -65,6 +73,11 @@ def create_app(config_class=Config):
             }
 
             added_column = False
+            for column_name, ddl in camp_columns.items():
+                if column_name not in existing_camp_columns:
+                    db.session.execute(text(ddl))
+                    added_column = True
+
             for column_name, ddl in participant_columns.items():
                 if column_name not in existing_columns:
                     db.session.execute(text(ddl))

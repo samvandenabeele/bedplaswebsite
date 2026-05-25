@@ -10,6 +10,8 @@ class Camp(db.Model):
     code = db.Column(db.String(64), unique=True, nullable=False, index=True)
     name = db.Column(db.String(255), nullable=True)
     source_header = db.Column(db.Text, nullable=True)
+    start_date = db.Column(db.Date, nullable=True)
+    end_date = db.Column(db.Date, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     active = db.Column(db.Boolean, default=True)
     users = db.relationship("User", backref="camp", lazy=True)
@@ -21,6 +23,8 @@ class Camp(db.Model):
             "code": self.code,
             "name": self.name,
             "source_header": self.source_header,
+            "start_date": self.start_date.isoformat() if self.start_date is not None else None,
+            "end_date": self.end_date.isoformat() if self.end_date is not None else None,
             "created_at": self.created_at.isoformat(),
             "active": self.active,
             "participant_count": len(self.participants),

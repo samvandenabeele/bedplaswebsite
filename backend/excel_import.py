@@ -1,7 +1,22 @@
 import re
+from datetime import datetime
 
 from extensions import db
 from models import Camp, Participant, User
+
+
+def _parse_header_date_range(header):
+    date_matches = re.findall(r"\b(\d{2}-\d{2}-\d{4})\b", header)
+    if len(date_matches) < 2:
+        return None, None
+
+    try:
+        start_date = datetime.strptime(date_matches[0], "%d-%m-%Y").date()
+        end_date = datetime.strptime(date_matches[1], "%d-%m-%Y").date()
+    except ValueError:
+        return None, None
+
+    return start_date, end_date
 
 
 def _extract_camp_metadata(wb):
@@ -23,16 +38,21 @@ def _extract_camp_metadata(wb):
 
     code = code_match.group(1).strip()
     name = re.sub(r"\s*\(vakantiecode\s+[^)]+\)\s*$", "", header, flags=re.IGNORECASE).strip() or None
+    start_date, end_date = _parse_header_date_range(header)
 
     camp = Camp.query.filter_by(code=code).first()
     if camp is None:
-        camp = Camp(code=code, name=name, source_header=header)
+        camp = Camp(code=code, name=name, source_header=header, start_date=start_date, end_date=end_date)
         db.session.add(camp)
     else:
         if name and not camp.name:
             camp.name = name
         if not camp.source_header:
             camp.source_header = header
+        if start_date is not None:
+            camp.start_date = start_date
+        if end_date is not None:
+            camp.end_date = end_date
 
     db.session.flush()
 

@@ -9,6 +9,7 @@ from api_auth import create_access_token, require_auth
 from participant_service import resolve_participant, participant_activity_summary
 from entry_service import entry_model_for_kind
 from excel_import import process_workbook
+from diaries import create_diary
 
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -68,6 +69,29 @@ def _camp_for_user_payload(payload: dict):
         return None, "Camp not found."
 
     return camp, None
+
+
+def _parse_camp_date(value, field_name: str):
+    if value in (None, ""):
+        return None
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, str):
+        for date_format in ("%Y-%m-%d", "%d-%m-%Y"):
+            try:
+                return datetime.strptime(value, date_format).date()
+            except ValueError:
+                continue
+
+    raise ValueError(f"{field_name} must be a valid date.")
+
+
+def _validate_camp_date_range(start_date, end_date):
+    if start_date is not None and end_date is not None and start_date > end_date:
+        return "start_date must be on or before end_date."
+    return None
 
 
 def _require_global_admin():
@@ -165,14 +189,29 @@ def create_camp():
     code = str(payload.get("code", "")).strip()
     name = str(payload.get("name", "")).strip() or None
     source_header = str(payload.get("source_header", "")).strip() or None
+    try:
+        start_date = _parse_camp_date(payload.get("start_date"), "start_date")
+        end_date = _parse_camp_date(payload.get("end_date"), "end_date")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not code:
         return jsonify({"error": "code is required."}), 400
 
+    date_error = _validate_camp_date_range(start_date, end_date)
+    if date_error is not None:
+        return jsonify({"error": date_error}), 400
+
     if Camp.query.filter_by(code=code).first() is not None:
         return jsonify({"error": "Camp code already exists."}), 409
 
-    camp = Camp(code=code, name=name, source_header=source_header)
+    camp = Camp(
+        code=code,
+        name=name,
+        source_header=source_header,
+        start_date=start_date,
+        end_date=end_date,
+    )
     db.session.add(camp)
     db.session.commit()
 
@@ -205,6 +244,22 @@ def update_camp(camp_id: int):
 
     if "source_header" in payload:
         camp.source_header = str(payload.get("source_header", "")).strip() or None
+
+    if "start_date" in payload:
+        try:
+            camp.start_date = _parse_camp_date(payload.get("start_date"), "start_date")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    if "end_date" in payload:
+        try:
+            camp.end_date = _parse_camp_date(payload.get("end_date"), "end_date")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    date_error = _validate_camp_date_range(camp.start_date, camp.end_date)
+    if date_error is not None:
+        return jsonify({"error": date_error}), 400
 
     if "active" in payload:
         camp.active = bool(payload.get("active"))
@@ -839,3 +894,23 @@ def add_clock_use():
     db.session.commit()
 
     return jsonify({'message' : 'clockUse added', 'participant_id': id})
+
+@api_bp.get("downloadDiaries")
+@require_auth
+def download_diaries():
+    payload = request.get_json(silent=True) or {}
+    camp_id = payload.get("camp_id", "")
+    
+    files = []
+
+    if not camp_id:
+        return jsonify({"error": "Camp ID is required."}), 400
+    
+    participants = (
+        db.session.query(Participant)
+        .filter(Participant.camp_id == camp_id)
+        .all()
+    )
+
+    for p in participants:
+        files.append(create_diary(p))

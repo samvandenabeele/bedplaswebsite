@@ -13,6 +13,8 @@ export type CampSummary = {
   code: string;
   name: string | null;
   source_header: string | null;
+  start_date: string | null;
+  end_date: string | null;
   created_at: string;
   active: boolean;
   participant_count: number;
@@ -69,6 +71,8 @@ export type CampPayload = {
   code: string;
   name?: string;
   source_header?: string;
+  start_date?: string;
+  end_date?: string;
 };
 
 export type UpdateCampPayload = Partial<CampPayload> & {
