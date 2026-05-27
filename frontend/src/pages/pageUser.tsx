@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   addClock,
   addClockUse,
@@ -66,6 +66,24 @@ function PageUser({ currentUser }: PageUserProps) {
   const [diaperWeight, setDiaperWeight] = useState("0");
   const [diaperNote, setDiaperNote] = useState("");
   const [emptyDiaperDraft, setEmptyDiaperDraft] = useState("0");
+  const urlPreselectedParticipantId = useRef<number | null>(null);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const rawParticipantId =
+      searchParams.get("participant") ?? searchParams.get("participant_id");
+
+    if (!rawParticipantId) {
+      urlPreselectedParticipantId.current = null;
+      return;
+    }
+
+    const parsedParticipantId = Number(rawParticipantId);
+    urlPreselectedParticipantId.current =
+      Number.isInteger(parsedParticipantId) && parsedParticipantId > 0
+        ? parsedParticipantId
+        : null;
+  }, []);
 
   const selectedParticipant = participants.find(
     (participant) => participant.id === selectedParticipantId,
@@ -83,9 +101,29 @@ function PageUser({ currentUser }: PageUserProps) {
     try {
       const response = await queryParticipants();
       setParticipants(response.participants);
-      setSelectedParticipantId(
-        (current) => current || response.participants[0]?.id || "",
+
+      const preferredParticipantId = urlPreselectedParticipantId.current;
+      const preferredParticipantExists = response.participants.some(
+        (participant) => participant.id === preferredParticipantId,
       );
+
+      if (preferredParticipantExists && preferredParticipantId !== null) {
+        setSelectedParticipantId(preferredParticipantId);
+        urlPreselectedParticipantId.current = null;
+        return;
+      }
+
+      setSelectedParticipantId((current) => {
+        const currentParticipantExists = response.participants.some(
+          (participant) => participant.id === current,
+        );
+
+        if (currentParticipantExists) {
+          return current;
+        }
+
+        return response.participants[0]?.id || "";
+      });
     } catch (loadError) {
       setError(
         loadError instanceof Error
