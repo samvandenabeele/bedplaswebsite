@@ -28,6 +28,135 @@ const URINE_NOTE_OPTIONS = [
   "Variërend (natte broek tot bovenkleding nat)",
 ];
 
+type NfcLikeRecord = {
+  recordType?: string;
+  data?: unknown;
+  encoding?: string;
+};
+
+type NfcLikeEvent = {
+  message?: {
+    records?: NfcLikeRecord[];
+  };
+};
+
+function normalizeLookupValue(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("nl-BE");
+}
+
+function participantDisplayName(participant: ParticipantSummary) {
+  return `${participant.name} ${participant.last_name}`.trim();
+}
+
+function parseParticipantIdFromText(rawText: string) {
+  const trimmedText = rawText.trim();
+  if (!trimmedText) {
+    return null;
+  }
+
+  try {
+    const parsedUrl = new URL(trimmedText);
+    const urlParticipantId =
+      parsedUrl.searchParams.get("participant") ??
+      parsedUrl.searchParams.get("participant_id");
+
+    if (urlParticipantId) {
+      const parsedId = Number(urlParticipantId);
+      if (Number.isInteger(parsedId) && parsedId > 0) {
+        return parsedId;
+      }
+    }
+
+    const pathSegments = parsedUrl.pathname.split("/").filter(Boolean);
+    const lastPathSegment = pathSegments[pathSegments.length - 1];
+    if (lastPathSegment) {
+      const parsedPathId = Number(lastPathSegment);
+      if (Number.isInteger(parsedPathId) && parsedPathId > 0) {
+        return parsedPathId;
+      }
+    }
+  } catch {
+    // Not a URL; continue with text matching below.
+  }
+
+  const directId = Number(trimmedText);
+  if (Number.isInteger(directId) && directId > 0) {
+    return directId;
+  }
+
+  const idMatch = trimmedText.match(
+    /(?:participant(?:_id)?|id)\s*[:=]\s*(\d+)/i,
+  );
+  if (idMatch) {
+    const parsedId = Number(idMatch[1]);
+    if (Number.isInteger(parsedId) && parsedId > 0) {
+      return parsedId;
+    }
+  }
+
+  return null;
+}
+
+function findParticipantFromScan(
+  rawText: string,
+  participants: ParticipantSummary[],
+) {
+  const participantId = parseParticipantIdFromText(rawText);
+  if (participantId !== null) {
+    const byId = participants.find(
+      (participant) => participant.id === participantId,
+    );
+    if (byId) {
+      return byId;
+    }
+  }
+
+  const normalizedText = normalizeLookupValue(rawText);
+  if (!normalizedText) {
+    return null;
+  }
+
+  const exactDisplayMatches = participants.filter((participant) => {
+    const displayName = normalizeLookupValue(
+      participantDisplayName(participant),
+    );
+    const reversedName = normalizeLookupValue(
+      `${participant.last_name} ${participant.name}`.trim(),
+    );
+
+    return (
+      displayName === normalizedText ||
+      reversedName === normalizedText ||
+      normalizeLookupValue(participant.name) === normalizedText ||
+      normalizeLookupValue(participant.last_name) === normalizedText
+    );
+  });
+
+  if (exactDisplayMatches.length === 1) {
+    return exactDisplayMatches[0];
+  }
+
+  return null;
+}
+
+async function readNfcRecordText(record: NfcLikeRecord) {
+  if (typeof record.data === "string") {
+    return record.data;
+  }
+
+  if (record.data instanceof Blob) {
+    return record.data.text();
+  }
+
+  if (record.data instanceof DataView || record.data instanceof ArrayBuffer) {
+    return new TextDecoder(record.encoding || "utf-8").decode(
+      record.data as ArrayBufferView,
+    );
+  }
+
+  return "";
+}
+
 type PageUserProps = {
   currentUser: AuthUser | null;
 };
@@ -67,6 +196,29 @@ function PageUser({ currentUser }: PageUserProps) {
   const [diaperNote, setDiaperNote] = useState("");
   const [emptyDiaperDraft, setEmptyDiaperDraft] = useState("0");
   const urlPreselectedParticipantId = useRef<number | null>(null);
+  const participantsRef = useRef<ParticipantSummary[]>([]);
+  const nfcAbortControllerRef = useRef<AbortController | null>(null);
+  const [nfcSupported, setNfcSupported] = useState(false);
+  const [nfcScanning, setNfcScanning] = useState(false);
+
+  useEffect(() => {
+    participantsRef.current = participants;
+  }, [participants]);
+
+  useEffect(() => {
+    setNfcSupported(
+      typeof window !== "undefined" &&
+        window.isSecureContext &&
+        "NDEFReader" in window,
+    );
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      nfcAbortControllerRef.current?.abort();
+      nfcAbortControllerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -94,6 +246,116 @@ function PageUser({ currentUser }: PageUserProps) {
       selectedParticipant ? String(selectedParticipant.empty_diaper) : "0",
     );
   }, [selectedParticipant]);
+
+  function stopNfcScan() {
+    nfcAbortControllerRef.current?.abort();
+    nfcAbortControllerRef.current = null;
+    setNfcScanning(false);
+  }
+
+  async function handleNfcReading(event: NfcLikeEvent) {
+    const records = event.message?.records ?? [];
+    const rawTexts = await Promise.all(
+      records.map((record) => readNfcRecordText(record)),
+    );
+    const scanValue = rawTexts.map((text) => text.trim()).find(Boolean) ?? "";
+
+    if (!scanValue) {
+      setError("De NFC-tag bevat geen leesbare gegevens.");
+      return;
+    }
+
+    const matchedParticipant = findParticipantFromScan(
+      scanValue,
+      participantsRef.current,
+    );
+
+    if (!matchedParticipant) {
+      setError(
+        `NFC-tag gelezen (${scanValue}), maar er werd geen passend kind gevonden.`,
+      );
+      return;
+    }
+
+    setError(null);
+    setMessage(
+      `NFC-tag geselecteerd voor ${participantDisplayName(matchedParticipant)}.`,
+    );
+    setSelectedParticipantId(matchedParticipant.id);
+    stopNfcScan();
+  }
+
+  async function startNfcScan() {
+    if (nfcScanning) {
+      stopNfcScan();
+      return;
+    }
+
+    if (!nfcSupported) {
+      setError(
+        "NFC scannen wordt niet ondersteund in deze browser of dit venster is niet veilig (https).",
+      );
+      return;
+    }
+
+    const NdefReaderConstructor = (
+      window as Window & {
+        NDEFReader?: new () => {
+          scan: (options?: { signal?: AbortSignal }) => Promise<void>;
+          addEventListener: (
+            type: string,
+            listener: (event: unknown) => void,
+          ) => void;
+          removeEventListener: (
+            type: string,
+            listener: (event: unknown) => void,
+          ) => void;
+        };
+      }
+    ).NDEFReader;
+
+    if (!NdefReaderConstructor) {
+      setError("NFC scannen is niet beschikbaar in deze browser.");
+      return;
+    }
+
+    const reader = new NdefReaderConstructor();
+    const abortController = new AbortController();
+    nfcAbortControllerRef.current = abortController;
+    setNfcScanning(true);
+    setError(null);
+    setMessage("Houd de NFC-tag tegen het toestel...");
+
+    const onReading = (event: unknown) => {
+      void handleNfcReading(event as NfcLikeEvent).catch((scanError) => {
+        setError(
+          scanError instanceof Error
+            ? scanError.message
+            : "NFC-tag lezen mislukt.",
+        );
+        stopNfcScan();
+      });
+    };
+
+    const onError = () => {
+      setError("NFC-tag lezen mislukt.");
+      stopNfcScan();
+    };
+
+    reader.addEventListener("reading", onReading);
+    reader.addEventListener("error", onError);
+
+    try {
+      await reader.scan({ signal: abortController.signal });
+    } catch (scanError) {
+      stopNfcScan();
+      setError(
+        scanError instanceof Error
+          ? scanError.message
+          : "NFC scannen kon niet worden gestart.",
+      );
+    }
+  }
 
   async function loadParticipants() {
     setLoadingParticipants(true);
@@ -501,14 +763,31 @@ function PageUser({ currentUser }: PageUserProps) {
               />
             </label>
 
-            <button
-              type="button"
-              onClick={() => void loadParticipants()}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-slate-100 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 sm:px-5"
-            >
-              Vernieuw lijst
-            </button>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <button
+                type="button"
+                onClick={() => void startNfcScan()}
+                disabled={!nfcSupported || loadingParticipants}
+                className="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
+              >
+                {nfcScanning ? "Stop NFC-scan" : "Scan NFC-tag"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void loadParticipants()}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-slate-100 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 sm:px-5"
+              >
+                Vernieuw lijst
+              </button>
+            </div>
           </div>
+
+          <p className="mt-3 text-xs text-slate-400">
+            {nfcSupported
+              ? "Scan een NFC-tag op ondersteunde toestellen om meteen het juiste kind te kiezen."
+              : "NFC scannen is niet beschikbaar in deze browser; gebruik dan de lijst of een URL met participant-id."}
+          </p>
 
           {selectedParticipant ? (
             <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
