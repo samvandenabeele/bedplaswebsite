@@ -8,6 +8,7 @@ generation can be filled in incrementally.
 from __future__ import annotations
 
 import argparse
+import logging
 import random
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -26,6 +27,7 @@ class SeedConfig:
     entries_per_participant: int = 10
     clear_existing: bool = False
     random_seed: int | None = 42
+    verbose: bool = False
 
 
 def parse_args() -> SeedConfig:
@@ -39,10 +41,10 @@ def parse_args() -> SeedConfig:
         help="Number of mock participants to create.",
     )
     parser.add_argument(
-        "--entries-per-participant",
+        "--entries-per-day",
         type=int,
         default=10,
-        help="Number of activity records to create per participant.",
+        help="Number of activity records to create per participant per day.",
     )
     parser.add_argument(
         "--clear-existing",
@@ -55,15 +57,29 @@ def parse_args() -> SeedConfig:
         default=42,
         help="Seed used for deterministic mock data.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging.",
+    )
     args = parser.parse_args()
     return SeedConfig(
         camps=args.camps,
         users=args.users,
         participants=args.participants,
-        entries_per_participant=args.entries_per_participant,
+        entries_per_participant=args.entries_per_day,
         clear_existing=args.clear_existing,
         random_seed=args.random_seed,
+        verbose=args.verbose,
     )
+
+
+def configure_logger(verbose: bool) -> logging.Logger:
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(levelname)s: %(message)s",
+    )
+    return logging.getLogger(__name__)
 
 
 def clear_database() -> None:
@@ -138,69 +154,128 @@ def make_participants(count: int, camps: Sequence[Camp]) -> list[Participant]:
     return participants
 
 
-def make_activity_entries(participants: Sequence[Participant], entries_per_participant: int) -> list[object]:
+def make_activity_entries(participants: Sequence[Participant], entries_per_day: int, logger) -> list[object]:
     entries: list[object] = []
+    logger.info(
+        "Generating activity entries for %s participants (%s entries/day)",
+        len(participants),
+        entries_per_day,
+    )
 
-    for participant in participants:
-        for offset in range(entries_per_participant):
-            created_at = datetime.now(timezone.utc).replace(hour=11, minute=32) - timedelta(days=offset)
-            created_at_night = datetime.now(timezone.utc).replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=offset)
-            note_text = "Op toilet" if offset % 2 == 0 else "Onderbroek nat"
-            choice = offset % 5
-            if choice == 0:
-                entries.append(Water(participant_id=participant.id, meal=bool(offset % 2), created_at=created_at))
-            elif choice == 1:
-                entries.append(
-                    Urine(
-                        participant_id=participant.id,
-                        amount=random.randint(1, 5),
-                        faeces=bool(offset % 3 == 0),
-                        created_at=created_at,
-                        note=note_text,
+    for participant_index, participant in enumerate(participants, start=1):
+        camp_start = participant.camps[0].start_date if getattr(participant, "camps", None) else date.today()
+        camp_end = participant.camps[0].end_date if getattr(participant, "camps", None) else date.today() + timedelta(days=7)
+        days = (camp_end - camp_start).days
+        base_date = datetime.combine(camp_start, datetime.min.time(), tzinfo=timezone.utc)
+        participant_entries_before = len(entries)
+
+        if not getattr(participant, "camps", None):
+            logger.warning(
+                "Participant %s has no camp linked; using fallback range %s -> %s",
+                participant.id,
+                camp_start,
+                camp_end,
+            )
+
+        logger.debug(
+            "[%s/%s] Participant %s: generating data for %s day(s) (%s -> %s)",
+            participant_index,
+            len(participants),
+            participant.id,
+            days,
+            camp_start,
+            camp_end,
+        )
+
+        for day in range(days):
+            for offset in range(entries_per_day):
+                created_at = base_date + timedelta(days=day, hours=random.randint(10, 17), minutes=random.randint(0, 59))
+                # pick a night hour between 22..23 or 0..6 (early next day)
+                hour_night = random.choice([random.randint(22, 23), random.randint(0, 6)])
+                night_day_offset = 1 if hour_night <= 6 else 0
+                created_at_night = base_date + timedelta(days=day + night_day_offset, hours=hour_night, minutes=33)
+                note_text = "Op toilet" if offset % 2 == 0 else "Onderbroek nat"
+
+                for _ in range(random.randint(5, 10)):
+                    entries.append(Water(participant_id=participant.id, meal=bool(offset % 2), created_at=created_at))
+                for i in range(random.randint(5, 10)):
+                    entries.append(
+                        Urine(
+                            participant_id=participant.id,
+                            amount=random.randint(1, 5),
+                            faeces=bool(offset % 3 == 0),
+                            created_at=created_at + timedelta(hours=i%5),
+                            note=note_text,
+                        )
                     )
-                )
-            elif choice == 2:
-                entries.append(
-                    Diaper(
-                        participant_id=participant.id,
-                        weight=random.randint(100, 300),
-                        created_at=created_at_night,
-                        note="Mock diaper entry.",
+
+                if random.randint(0, 1) == 0:
+                    entries.append(
+                        Diaper(
+                            participant_id=participant.id,
+                            weight=random.randint(100, 300),
+                            created_at=created_at_night,
+                            note="Mock diaper entry.",
+                        )
                     )
-                )
-            elif choice == 3:
-                entries.append(Clock(participant_id=participant.id, created_at=created_at_night))
-            else:
-                entries.append(
-                    ClockUse(
-                        participant_id=participant.id,
-                        created_at=created_at_night,
+                if random.randint(0,3) == 0:
+                    entries.append(
+                        ClockUse(
+                            participant_id=participant.id,
+                            created_at=created_at_night,
+                        )
                     )
-                )
+                    for i in range(0, 3):
+                        entries.append(Clock(participant_id=participant.id, created_at=(created_at_night + timedelta(hours=i))))
+
+            logger.debug(
+                "Participant %s day %s/%s processed; running total entries: %s",
+                participant.id,
+                day + 1,
+                days,
+                len(entries),
+            )
+
+        logger.info(
+            "Participant %s complete: +%s entries",
+            participant.id,
+            len(entries) - participant_entries_before,
+        )
+
+    logger.info("Activity generation finished: %s total entries", len(entries))
 
     return entries
 
 
 def seed_database(config: SeedConfig) -> None:
+    logger = configure_logger(config.verbose)
+
     if config.random_seed is not None:
         random.seed(config.random_seed)
+        logger.info("Using random seed %s", config.random_seed)
 
     if config.clear_existing:
+        logger.info("Clearing existing data")
         clear_database()
 
+    logger.info("Creating %s camps", config.camps)
     camps = make_camps(config.camps)
     db.session.add_all(camps)
     db.session.flush()
 
+    logger.info("Creating %s users and %s participants", config.users, config.participants)
     users = make_users(config.users, camps)
     participants = make_participants(config.participants, camps)
     db.session.add_all(users)
     db.session.add_all(participants)
     db.session.flush()
 
-    entries = make_activity_entries(participants, config.entries_per_participant)
+    logger.info("Creating activity entries")
+    entries = make_activity_entries(participants, config.entries_per_participant, logger)
+    logger.debug("Prepared %s activity entries", len(entries))
     db.session.add_all(entries)
     db.session.commit()
+    logger.info("Seeding complete")
 
 
 def main() -> None:

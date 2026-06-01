@@ -57,7 +57,7 @@ def create_diary(participant):
 	if starting_date is not None and ending_date is not None:
 		n_days = max((ending_date - starting_date).days, 0)
 
-	sheet = wb.worksheets["Algemene info"]
+	sheet = wb["Algemene info"]
 
 	sheet["B3"] = participant.name
 	sheet["B4"] = participant.last_name
@@ -65,7 +65,7 @@ def create_diary(participant):
 	
 
 	for i in range(n_days):
-		sheet = wb.worksheets[f"Dag {i}"] if i < len(wb.worksheets) else None
+		sheet = wb[f"Dag {i + 1}"] if i < len(wb.worksheets) else None
 
 		if starting_date is not None:
 			six_pm = datetime.combine(starting_date, time(18, 0))
