@@ -14,6 +14,7 @@ import ChangePasswordPage from "./pages/ChangePasswordPage";
 import PageAdmin from "./pages/pageAdmin";
 import PageSuperuser from "./pages/pageSuperuser";
 import PageUser from "./pages/pageUser";
+import Footer from "./components/Footer";
 
 type View = "user" | "superuser" | "admin";
 type AuthState =
@@ -91,39 +92,52 @@ function App() {
 
   if (authState === "loading") {
     return (
-      <div className="min-h-screen text-slate-100">
-        <div className="mx-auto flex min-h-screen w-full max-w-7xl items-center justify-center px-4 py-6 sm:px-6 lg:px-8">
-          <div className="rounded-4xl border border-white/10 bg-white/5 px-6 py-5 text-sm text-slate-300 shadow-2xl shadow-slate-950/40 backdrop-blur-xl">
-            Checking session...
+      <>
+        <div className="flex min-h-screen flex-col bg-linear-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+          <div className="flex flex-1 items-center justify-center px-4 py-6 sm:px-6 lg:px-8">
+            <div className="rounded-4xl border border-white/10 bg-white/5 px-6 py-5 text-sm text-slate-300 shadow-2xl shadow-slate-950/40 backdrop-blur-xl">
+              Checking session...
+            </div>
           </div>
         </div>
-      </div>
+        <Footer />
+      </>
     );
   }
 
   if (authState === "anonymous") {
     return (
-      <LoginPage
-        error={authError}
-        onLogin={handleLogin}
-        onError={setAuthError}
-      />
+      <div className="flex min-h-screen flex-col">
+        <div className="flex flex-1 items-center justify-center">
+          <LoginPage
+            error={authError}
+            onLogin={handleLogin}
+            onError={setAuthError}
+          />
+        </div>
+        <Footer />
+      </div>
     );
   }
 
   if (authState === "must_change_password") {
     return (
-      <ChangePasswordPage
-        error={authError}
-        onChangePassword={handlePasswordChange}
-        onCancel={handleLogout}
-      />
+      <div className="flex min-h-screen flex-col">
+        <div className="flex flex-1 items-center justify-center">
+          <ChangePasswordPage
+            error={authError}
+            onChangePassword={handlePasswordChange}
+            onCancel={handleLogout}
+          />
+        </div>
+        <Footer />
+      </div>
     );
   }
 
   return (
-    <div className="min-h-screen text-slate-100">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
+    <div className="flex min-h-screen flex-col text-slate-100">
+      <div className="mx-auto flex flex-1 w-full max-w-7xl flex-col px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
         <header className="mb-4 rounded-[1.75rem] border border-white/10 bg-white/5 p-3 shadow-lg shadow-slate-950/30 backdrop-blur sm:mb-6 sm:p-4 lg:p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
@@ -213,6 +227,7 @@ function App() {
           </div>
         </main>
       </div>
+      <Footer />
     </div>
   );
 }
