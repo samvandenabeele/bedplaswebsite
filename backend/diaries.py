@@ -65,10 +65,14 @@ def create_diary(participant):
 	
 
 	for i in range(n_days):
-		sheet = wb[f"Dag {i + 1}"] if i < len(wb.worksheets) else None
+		try:
+			sheet = wb[f"Dag {i + 1}"]
+		except KeyError:
+			continue
 
 		if starting_date is not None:
-			six_pm = datetime.combine(starting_date, time(18, 0))
+			current_day = starting_date + timedelta(days=i)
+			six_pm = datetime.combine(current_day, time(18, 0))
 			six_am_next_day = six_pm + timedelta(hours=12)
 
 			clock_use_count = db.session.query(func.count(ClockUse.id)).filter(
@@ -85,11 +89,7 @@ def create_diary(participant):
 		
 			clock_used = clock_use_count % 2 == 1
 
-			if clock_used:
-				sheet["E4"] = "Ja"
-			else:
-				sheet["E4"] = "Nee"
-
+			sheet["E4"] = "Ja" if clock_used else "Nee"
 			sheet["E5"] = n_clocks
 
 			seven_thirty_am_next_day = six_pm + timedelta(hours=13, minutes=30)
@@ -127,10 +127,7 @@ def create_diary(participant):
 				u for u in night_urines if (getattr(u, "note", None) or "").strip() != "Op toilet"
 			]
 
-			if not diapers and not night_urines_not_op_toilet:
-				sheet["E7"] = "Nee"
-			else:
-				sheet["E7"] = "Ja"
+			sheet["E7"] = "Nee" if not diapers and not night_urines_not_op_toilet else "Ja"
 
 			if diapers:
 				sheet["E8"] = _as_excel_number(diapers[-1].empty_weight)
@@ -140,7 +137,7 @@ def create_diary(participant):
 				sheet["E9"] = 0
 
 			for idx, urine in enumerate(night_urines):
-				col = 3 + idx  # start writing from column C (3)
+				col = 3 + idx
 				try:
 					time_str = urine.created_at.strftime("%H:%M") if getattr(urine, "created_at", None) is not None else ""
 				except Exception:
@@ -152,7 +149,7 @@ def create_diary(participant):
 				sheet.cell(row=19, column=col).value = True
 
 			for idx, urine in enumerate(urines):
-				col = 3 + idx  # start writing from column C (3)
+				col = 3 + idx
 				try:
 					time_str = urine.created_at.strftime("%H:%M") if getattr(urine, "created_at", None) is not None else ""
 				except Exception:
@@ -160,11 +157,12 @@ def create_diary(participant):
 				sheet.cell(row=15, column=col).value = time_str
 				sheet.cell(row=16, column=col).value = _as_excel_number(getattr(urine, "amount", ""))
 				note = (getattr(urine, "note", None) or "").strip()
+				sheet.cell(row=17, column=col).value = urine.faeces
 				sheet.cell(row=18, column=col).value = note
 				sheet.cell(row=19, column=col).value = False
 				
 			for idx, water in enumerate(waters):
-				col = 3 + idx  # start writing from column C (3)
+				col = 3 + idx
 				try:
 					time_str = water.created_at.strftime("%H:%M") if getattr(water, "created_at", None) is not None else ""
 				except Exception:
@@ -194,4 +192,3 @@ def create_diary(participant):
 
 	return str(diary_path)
 
-	

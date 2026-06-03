@@ -12,6 +12,10 @@ def create_app(config_class=Config):
     app = Flask(__name__, static_folder=None)
     app.config.from_object(config_class)
 
+    app.logger.setLevel(os.getenv("DEBUG_LEVEL", "WARNING"))
+    if app.debug:
+        app.logger.setLevel("DEBUG")
+
     db.init_app(app)
     # Initialize Flask-Migrate
     migrate.init_app(app, db)

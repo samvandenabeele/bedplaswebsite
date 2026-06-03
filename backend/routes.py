@@ -1,4 +1,5 @@
 
+import logging
 from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -15,6 +16,7 @@ from entry_service import entry_model_for_kind
 from excel_import import process_workbook
 from diaries import create_diary
 
+logger = logging.getLogger(__name__)
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -151,28 +153,34 @@ def _require_global_admin():
 
 @api_bp.get("/health")
 def health_check():
+    current_app.logger.info("Health check called")
     return jsonify({"status": "ok"})
 
 
 @api_bp.post("/auth/register")
 def register():
+    current_app.logger.info("Register endpoint called")
     payload = request.get_json(silent=True) or {}
     username = str(payload.get("username", "")).strip().lower()
     email = str(payload.get("email", "")).strip().lower() or None
     password = str(payload.get("password", ""))
 
     if not username or not password:
+        current_app.logger.warning("Register failed: missing username or password")
         return jsonify({"error": "username and password are required."}), 400
 
     if User.query.filter_by(username=username).first() is not None:
+        current_app.logger.warning(f"Register failed: username '{username}' already exists")
         return jsonify({"error": "Username already exists."}), 409
 
     if email and User.query.filter_by(email=email).first() is not None:
+        current_app.logger.warning(f"Register failed: email '{email}' already exists")
         return jsonify({"error": "Email already exists."}), 409
 
     # Always create regular users via the public register endpoint
     camps, camp_error = _resolve_camps_from_payload(payload)
     if camp_error is not None:
+        current_app.logger.warning(f"Register failed: camp error - {camp_error}")
         return jsonify({"error": camp_error}), 400
 
     primary_camp_id = camps[0].id if camps else None
@@ -182,41 +190,50 @@ def register():
     db.session.add(user)
     db.session.commit()
 
+    current_app.logger.info(f"User registered successfully: {username} (ID: {user.id})")
     token = create_access_token(user)
     return jsonify({"user": user.to_dict(), "token": token}), 201
 
 
 @api_bp.post("/auth/login")
 def login():
+    current_app.logger.info("Login endpoint called")
     payload = request.get_json(silent=True) or {}
     identifier = str(payload.get("identifier", payload.get("username", payload.get("email", "")))).strip().lower()
     password = str(payload.get("password", ""))
 
     if not identifier or not password:
+        current_app.logger.warning("Login failed: missing identifier or password")
         return jsonify({"error": "identifier and password are required."}), 400
 
     user = User.query.filter(or_(User.username == identifier, User.email == identifier)).first()
     if user is None or not user.check_password(password):
+        current_app.logger.warning(f"Login failed: invalid credentials for identifier '{identifier}'")
         return jsonify({"error": "Invalid credentials."}), 401
 
+    current_app.logger.info(f"User logged in successfully: {user.username} (ID: {user.id})")
     return jsonify({"user": user.to_dict(), "token": create_access_token(user)})
 
 
 @api_bp.post("/auth/password")
 @require_auth
 def change_password():
+    user = g.current_user
+    current_app.logger.info(f"Change password request from user: {user.username} (ID: {user.id})")
     payload = request.get_json(silent=True) or {}
     new_password = str(payload.get("new_password", ""))
     current_password = str(payload.get("current_password", ""))
 
     if not new_password:
+        current_app.logger.warning(f"Change password failed for {user.username}: missing new_password")
         return jsonify({"error": "new_password is required."}), 400
 
-    user = g.current_user
     if not getattr(user, "password_change_required", False):
         if not current_password:
+            current_app.logger.warning(f"Change password failed for {user.username}: missing current_password")
             return jsonify({"error": "current_password is required."}), 400
         if not user.check_password(current_password):
+            current_app.logger.warning(f"Change password failed for {user.username}: invalid current password")
             return jsonify({"error": "Invalid credentials."}), 401
 
     user.set_password(new_password)
@@ -224,6 +241,7 @@ def change_password():
     user.token_version += 1
     db.session.commit()
 
+    current_app.logger.info(f"Password changed successfully for user: {user.username} (ID: {user.id})")
     return jsonify({"user": user.to_dict(), "token": create_access_token(user)})
 
 
@@ -231,6 +249,7 @@ def change_password():
 @require_auth
 def logout():
     user = g.current_user
+    current_app.logger.info(f"User logged out: {user.username} (ID: {user.id})")
     user.token_version += 1
     db.session.commit()
     return jsonify({"message": "Logged out successfully."})
@@ -239,24 +258,33 @@ def logout():
 @api_bp.get("/auth/me")
 @require_auth
 def me():
-    return jsonify({"user": g.current_user.to_dict()})
+    user = g.current_user
+    current_app.logger.debug(f"Get current user info for: {user.username} (ID: {user.id})")
+    return jsonify({"user": user.to_dict()})
 
 
 @api_bp.get("/camps")
 @require_auth
 def list_camps():
+    user = g.current_user
+    current_app.logger.debug(f"List camps requested by user: {user.username} (ID: {user.id})")
     query = Camp.query
     if _current_user_is_camp_scoped():
         query = query.filter(Camp.id.in_(_current_camp_ids()))
 
     camps = query.order_by(Camp.created_at.desc()).all()
+    current_app.logger.info(f"Listed {len(camps)} camps for user: {user.username}")
     return jsonify({"camps": [camp.to_dict() for camp in camps]})
 
 
 @api_bp.post("/camps")
 @require_auth
 def create_camp():
+    user = g.current_user
+    current_app.logger.info(f"Create camp requested by user: {user.username} (ID: {user.id})")
+    
     if not _require_global_admin():
+        current_app.logger.warning(f"Create camp denied: user {user.username} is not a global admin")
         return jsonify({"error": "Only global admins can create camps."}), 403
 
     payload = request.get_json(silent=True) or {}
@@ -267,16 +295,20 @@ def create_camp():
         start_date = _parse_camp_date(payload.get("start_date"), "start_date")
         end_date = _parse_camp_date(payload.get("end_date"), "end_date")
     except ValueError as exc:
+        current_app.logger.warning(f"Create camp failed: invalid date format - {exc}")
         return jsonify({"error": str(exc)}), 400
 
     if not code:
+        current_app.logger.warning("Create camp failed: missing code")
         return jsonify({"error": "code is required."}), 400
 
     date_error = _validate_camp_date_range(start_date, end_date)
     if date_error is not None:
+        current_app.logger.warning(f"Create camp failed: {date_error}")
         return jsonify({"error": date_error}), 400
 
     if Camp.query.filter_by(code=code).first() is not None:
+        current_app.logger.warning(f"Create camp failed: camp code '{code}' already exists")
         return jsonify({"error": "Camp code already exists."}), 409
 
     camp = Camp(
@@ -289,17 +321,23 @@ def create_camp():
     db.session.add(camp)
     db.session.commit()
 
+    current_app.logger.info(f"Camp created successfully: {code} (ID: {camp.id}) by user {user.username}")
     return jsonify({"camp": camp.to_dict()}), 201
 
 
 @api_bp.patch("/camps/<int:camp_id>")
 @require_auth
 def update_camp(camp_id: int):
+    user = g.current_user
+    current_app.logger.info(f"Update camp {camp_id} requested by user: {user.username} (ID: {user.id})")
+    
     if not _require_global_admin():
+        current_app.logger.warning(f"Update camp {camp_id} denied: user {user.username} is not a global admin")
         return jsonify({"error": "Only global admins can update camps."}), 403
 
     camp = db.session.get(Camp, camp_id)
     if camp is None:
+        current_app.logger.warning(f"Update camp {camp_id} failed: camp not found")
         return jsonify({"error": "Camp not found."}), 404
 
     payload = request.get_json(silent=True) or {}
@@ -307,11 +345,14 @@ def update_camp(camp_id: int):
     if "code" in payload:
         code = str(payload.get("code", "")).strip()
         if not code:
+            current_app.logger.warning(f"Update camp {camp_id} failed: code cannot be empty")
             return jsonify({"error": "code is required."}), 400
         duplicate = Camp.query.filter(Camp.code == code, Camp.id != camp_id).first()
         if duplicate is not None:
+            current_app.logger.warning(f"Update camp {camp_id} failed: camp code '{code}' already exists")
             return jsonify({"error": "Camp code already exists."}), 409
         camp.code = code
+        current_app.logger.debug(f"Camp {camp_id} code updated to: {code}")
 
     if "name" in payload:
         camp.name = str(payload.get("name", "")).strip() or None
@@ -323,41 +364,52 @@ def update_camp(camp_id: int):
         try:
             camp.start_date = _parse_camp_date(payload.get("start_date"), "start_date")
         except ValueError as exc:
+            current_app.logger.warning(f"Update camp {camp_id} failed: invalid start_date - {exc}")
             return jsonify({"error": str(exc)}), 400
 
     if "end_date" in payload:
         try:
             camp.end_date = _parse_camp_date(payload.get("end_date"), "end_date")
         except ValueError as exc:
+            current_app.logger.warning(f"Update camp {camp_id} failed: invalid end_date - {exc}")
             return jsonify({"error": str(exc)}), 400
 
     date_error = _validate_camp_date_range(camp.start_date, camp.end_date)
     if date_error is not None:
+        current_app.logger.warning(f"Update camp {camp_id} failed: {date_error}")
         return jsonify({"error": date_error}), 400
 
     if "active" in payload:
         camp.active = bool(payload.get("active"))
 
     db.session.commit()
+    current_app.logger.info(f"Camp {camp_id} updated successfully by user {user.username}")
     return jsonify({"camp": camp.to_dict()})
 
 @api_bp.route("/addParticipant", methods=["POST"])
 @require_auth
 def add_participants():
+    user = g.current_user
+    current_app.logger.info(f"Add participant request from user: {user.username} (ID: {user.id})")
+    
     payload = request.get_json(silent=True)
     if payload is None:
+        current_app.logger.warning("Add participant failed: no JSON payload provided")
         return jsonify({"error": "incorrect participant info"}), 400
 
     name = str(payload.get("name", "")).strip()
     if not name:
+        current_app.logger.warning("Add participant failed: missing name")
         return jsonify({"error": "name is required."}), 400
     
     last_name = str(payload.get("last_name", "")).strip()
     if not last_name:
+        current_app.logger.warning("Add participant failed: missing last_name")
         return jsonify({"error": "last name is required."}), 400
     
     phone_1 = str(payload.get("phone_1", "")).strip()
     if not phone_1:
+        current_app.logger.warning("Add participant failed: missing phone_1")
         return jsonify({"error": "phone_1 is required."}), 400
     
     phone_2 = str(payload.get("phone_2", "")).strip()
@@ -369,10 +421,12 @@ def add_participants():
         try:
             birth_date = _parse_camp_date(payload.get("birth_date"), "birth_date")
         except ValueError as exc:
+            current_app.logger.warning(f"Add participant failed: invalid birth_date - {exc}")
             return jsonify({"error": str(exc)}), 400
 
     camps, camp_error = _resolve_camps_from_payload(payload, allow_empty=False)
     if camp_error is not None:
+        current_app.logger.warning(f"Add participant failed: camp error - {camp_error}")
         return jsonify({"error": camp_error}), 400
 
     primary_camp_id = camps[0].id if camps else None
@@ -389,7 +443,7 @@ def add_participants():
     db.session.add(new_participant)
     db.session.commit()
     
-
+    current_app.logger.info(f"Participant added successfully: {name} {last_name} (ID: {new_participant.id}) by user {user.username}")
     return jsonify({"message": "Participant added successfully.", "name": name}), 201
 
 
@@ -397,6 +451,9 @@ def add_participants():
 @require_auth
 def create_user():
     """Create a new user. Admins may create users with any role. Superusers may create regular users scoped to their camp."""
+    user = g.current_user
+    current_app.logger.info(f"Create user request from user: {user.username} (ID: {user.id})")
+    
     payload = request.get_json(silent=True) or {}
     username = str(payload.get("username", "")).strip().lower()
     email = str(payload.get("email", "")).strip().lower() or None
@@ -404,23 +461,26 @@ def create_user():
     role = str(payload.get("role", "user")).strip().lower() or "user"
 
     if not username or not password:
+        current_app.logger.warning("Create user failed: missing username or password")
         return jsonify({"error": "username and password are required."}), 400
 
     if User.query.filter_by(username=username).first() is not None:
+        current_app.logger.warning(f"Create user failed: username '{username}' already exists")
         return jsonify({"error": "Username already exists."}), 409
 
     if email and User.query.filter_by(email=email).first() is not None:
+        current_app.logger.warning(f"Create user failed: email '{email}' already exists")
         return jsonify({"error": "Email already exists."}), 409
 
-    current_user = g.current_user
-
     # Only admins can create superusers or admin accounts
-    if role in ("superuser", "admin") and not getattr(current_user, "is_admin", False):
+    if role in ("superuser", "admin") and not getattr(user, "is_admin", False):
+        current_app.logger.warning(f"Create user failed: user {user.username} not authorized to create role '{role}'")
         return jsonify({"error": "Only admins can create superuser or admin accounts."}), 403
 
     # Determine camp assignment
     camps, camp_error = _resolve_camps_from_payload(payload)
     if camp_error is not None:
+        current_app.logger.warning(f"Create user failed: camp error - {camp_error}")
         return jsonify({"error": camp_error}), 400
 
     primary_camp_id = camps[0].id if camps else None
@@ -430,17 +490,23 @@ def create_user():
     db.session.add(new_user)
     db.session.commit()
 
+    current_app.logger.info(f"User created successfully: {username} (ID: {new_user.id}, role={role}) by user {user.username}")
     return jsonify({"user": new_user.to_dict()}), 201
 
 
 @api_bp.patch("/users/<int:user_id>")
 @require_auth
 def update_user(user_id: int):
+    current_user = g.current_user
+    current_app.logger.info(f"Update user {user_id} requested by user: {current_user.username} (ID: {current_user.id})")
+    
     if not _require_global_admin():
+        current_app.logger.warning(f"Update user {user_id} denied: user {current_user.username} is not a global admin")
         return jsonify({"error": "Only admins can update user accounts."}), 403
 
     user = db.session.get(User, user_id)
     if user is None:
+        current_app.logger.warning(f"Update user {user_id} failed: user not found")
         return jsonify({"error": "User not found."}), 404
 
     payload = request.get_json(silent=True) or {}
@@ -449,31 +515,39 @@ def update_user(user_id: int):
     if "role" in payload:
         role = str(payload.get("role", "")).strip().lower()
         if role not in ("user", "superuser", "admin"):
+            current_app.logger.warning(f"Update user {user_id} failed: invalid role '{role}'")
             return jsonify({"error": "Invalid role."}), 400
         user.role = role
         updates_applied = True
+        current_app.logger.debug(f"User {user_id} role updated to: {role}")
 
     if "email" in payload:
         email = str(payload.get("email", "")).strip().lower() or None
         if email != user.email:
             if email and User.query.filter(User.email == email, User.id != user.id).first() is not None:
+                current_app.logger.warning(f"Update user {user_id} failed: email '{email}' already exists")
                 return jsonify({"error": "Email already exists."}), 409
             user.email = email
             updates_applied = True
+            current_app.logger.debug(f"User {user_id} email updated")
 
     if "username" in payload:
         username = str(payload.get("username", "")).strip().lower()
         if not username:
+            current_app.logger.warning(f"Update user {user_id} failed: username cannot be empty")
             return jsonify({"error": "username cannot be empty."}), 400
         if username != user.username:
             if User.query.filter(User.username == username, User.id != user.id).first() is not None:
+                current_app.logger.warning(f"Update user {user_id} failed: username '{username}' already exists")
                 return jsonify({"error": "Username already exists."}), 409
             user.username = username
             updates_applied = True
+            current_app.logger.debug(f"User {user_id} username updated to: {username}")
 
     if "camp_ids" in payload or "camp_id" in payload:
         camps, camp_error = _resolve_camps_from_payload(payload)
         if camp_error is not None:
+            current_app.logger.warning(f"Update user {user_id} failed: camp error - {camp_error}")
             return jsonify({"error": camp_error}), 400
 
         next_camp_ids = [camp.id for camp in camps]
@@ -482,21 +556,28 @@ def update_user(user_id: int):
             user.camps = camps
             user.camp_id = camps[0].id if camps else None
             updates_applied = True
+            current_app.logger.debug(f"User {user_id} camps updated to: {next_camp_ids}")
 
     if not updates_applied:
+        current_app.logger.warning(f"Update user {user_id} failed: no valid updates provided")
         return jsonify({"error": "No valid updates provided."}), 400
 
     db.session.commit()
+    current_app.logger.info(f"User {user_id} updated successfully by user {current_user.username}")
     return jsonify({"user": user.to_dict()})
 
 @api_bp.route("/delParticipant", methods=["POST"])
 @require_auth
 def del_participant():
+    user = g.current_user
+    current_app.logger.info(f"Delete participant request from user: {user.username} (ID: {user.id})")
+    
     payload = request.get_json(silent=True) or {}
     name = str(payload.get("name", "")).strip()
     last_name = str(payload.get("last_name", "")).strip()
 
     if not name or not last_name:
+        current_app.logger.warning("Delete participant failed: missing name or last_name")
         return jsonify({"error": "name and last name are required."}), 400
 
     participant = _scoped_participant_query().filter(
@@ -505,19 +586,24 @@ def del_participant():
     ).first()
 
     if participant is None:
+        current_app.logger.warning(f"Delete participant failed: participant '{name} {last_name}' not found")
         return jsonify({"error": "Participant not found."}), 404
 
+    participant_id = participant.id
     db.session.delete(participant)
     db.session.commit()
 
+    current_app.logger.info(f"Participant deleted successfully: {name} {last_name} (ID: {participant_id}) by user {user.username}")
     return jsonify({"message": "Participant deleted successfully."})
 
 @api_bp.route("/queryParticipant", methods=["POST"])
 @require_auth
 def query_participant():
+    user = g.current_user
     payload = request.get_json(silent=True) or {}
+    current_app.logger.debug(f"Query participant request from user: {user.username} with filters: {payload}")
+    
     query = _scoped_participant_query()
-
 
     if payload.get("name"):
         query = query.filter(Participant.name.ilike(f"%{payload.get('name')}%"))
@@ -532,12 +618,16 @@ def query_participant():
         query = query.filter(Participant.phone_2.ilike(f"%{payload.get('phone_2')}%"))
     
     participants = query.all()
+    current_app.logger.info(f"Participant query returned {len(participants)} results for user {user.username}")
     return jsonify({"participants": [participant_activity_summary(p) for p in participants]})
 
 @api_bp.route("/queryCounselor", methods=["POST"])
 @require_auth
 def query_counselor():
+    user = g.current_user
     payload = request.get_json(silent=True) or {}
+    current_app.logger.debug(f"Query counselor request from user: {user.username} with filters: {payload}")
+    
     # Query users (counselors). There is no `active` on User, so just query User
     query = _scoped_user_query()
 
@@ -550,6 +640,7 @@ def query_counselor():
         query = query.filter(User.email.ilike(f"%{payload.get('email')}%"))
 
     counselors = query.all()
+    current_app.logger.info(f"Counselor query returned {len(counselors)} results for user {user.username}")
 
     return jsonify({
         "counselors": [
@@ -572,23 +663,30 @@ def query_counselor():
 @api_bp.patch("/updateEmptyDiaper")
 @require_auth
 def update_empty_diaper():
+    user = g.current_user
+    current_app.logger.debug(f"Update empty diaper request from user: {user.username}")
+    
     payload = request.get_json(silent=True) or {}
     participant = resolve_participant(payload, _current_camp_ids())
 
     if participant is None:
+        current_app.logger.warning(f"Update empty diaper failed: participant not found")
         return jsonify({"error": "Participant not found."}), 404
 
     try:
         empty_diaper = int(payload.get("empty_diaper"))
     except (TypeError, ValueError):
+        current_app.logger.warning(f"Update empty diaper failed: invalid empty_diaper value")
         return jsonify({"error": "empty_diaper must be an integer."}), 400
 
     if empty_diaper < 0:
+        current_app.logger.warning(f"Update empty diaper failed: negative value provided")
         return jsonify({"error": "empty_diaper must be zero or greater."}), 400
 
     participant.empty_diaper = empty_diaper
     db.session.commit()
 
+    current_app.logger.info(f"Empty diaper updated for participant {participant.id}: {empty_diaper} by user {user.username}")
     return jsonify(
         {
             "message": "Empty diaper weight updated successfully.",

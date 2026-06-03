@@ -195,21 +195,20 @@ def make_activity_entries(participants: Sequence[Participant], entries_per_day: 
                 night_day_offset = 1 if hour_night <= 6 else 0
                 created_at_night = base_date + timedelta(days=day + night_day_offset, hours=hour_night, minutes=33)
                 note_text = "Op toilet" if offset % 2 == 0 else "Onderbroek nat"
-
-                for _ in range(random.randint(5, 10)):
+                entry_type = offset%5
+                if entry_type == 0:
                     entries.append(Water(participant_id=participant.id, meal=bool(offset % 2), created_at=created_at))
-                for i in range(random.randint(5, 10)):
+                elif entry_type == 1:
                     entries.append(
                         Urine(
                             participant_id=participant.id,
                             amount=random.randint(1, 5),
                             faeces=bool(offset % 3 == 0),
-                            created_at=created_at + timedelta(hours=i%5),
+                            created_at=base_date + timedelta(days=day, hours=random.randint(0, 24)),
                             note=note_text,
                         )
                     )
-
-                if random.randint(0, 1) == 0:
+                elif entry_type == 2:
                     entries.append(
                         Diaper(
                             participant_id=participant.id,
@@ -218,15 +217,15 @@ def make_activity_entries(participants: Sequence[Participant], entries_per_day: 
                             note="Mock diaper entry.",
                         )
                     )
-                if random.randint(0,3) == 0:
+                elif entry_type == 3:
                     entries.append(
                         ClockUse(
                             participant_id=participant.id,
                             created_at=created_at_night,
                         )
                     )
-                    for i in range(0, 3):
-                        entries.append(Clock(participant_id=participant.id, created_at=(created_at_night + timedelta(hours=i))))
+                elif entry_type == 4:
+                    entries.append(Clock(participant_id=participant.id, created_at=created_at_night))
 
             logger.debug(
                 "Participant %s day %s/%s processed; running total entries: %s",

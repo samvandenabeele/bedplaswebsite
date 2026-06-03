@@ -200,6 +200,7 @@ function PageUser({ currentUser }: PageUserProps) {
   const nfcAbortControllerRef = useRef<AbortController | null>(null);
   const [nfcSupported, setNfcSupported] = useState(false);
   const [nfcScanning, setNfcScanning] = useState(false);
+  const [nfcWriting, setNfcWriting] = useState(false);
 
   useEffect(() => {
     participantsRef.current = participants;
@@ -354,6 +355,65 @@ function PageUser({ currentUser }: PageUserProps) {
           ? scanError.message
           : "NFC scannen kon niet worden gestart.",
       );
+    }
+  }
+
+  async function startNfcWrite() {
+    if (!selectedParticipant) {
+      setError("Kies eerst een kind.");
+      return;
+    }
+
+    if (!nfcSupported) {
+      setError(
+        "NFC schrijven wordt niet ondersteund in deze browser of dit venster is niet veilig (https).",
+      );
+      return;
+    }
+
+    const NdefWriterConstructor = (
+      window as Window & {
+        NDEFWriter?: new () => {
+          write: (options: {
+            records: Array<{ recordType: string; data: string }>;
+          }) => Promise<void>;
+        };
+      }
+    ).NDEFWriter;
+
+    if (!NdefWriterConstructor) {
+      setError("NFC schrijven is niet beschikbaar in deze browser.");
+      return;
+    }
+
+    setNfcWriting(true);
+    setError(null);
+    setMessage("Houd de NFC-tag tegen het toestel om te schrijven...");
+
+    try {
+      const writer = new NdefWriterConstructor();
+      const participantIdText = String(selectedParticipant.id);
+
+      await writer.write({
+        records: [
+          {
+            recordType: "text",
+            data: participantIdText,
+          },
+        ],
+      });
+
+      setMessage(
+        `NFC-tag geschreven voor ${participantDisplayName(selectedParticipant)}.`,
+      );
+      setNfcWriting(false);
+    } catch (writeError) {
+      setError(
+        writeError instanceof Error
+          ? writeError.message
+          : "NFC schrijven mislukt.",
+      );
+      setNfcWriting(false);
     }
   }
 
@@ -771,6 +831,17 @@ function PageUser({ currentUser }: PageUserProps) {
                 className="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
               >
                 {nfcScanning ? "Stop NFC-scan" : "Scan NFC-tag"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void startNfcWrite()}
+                disabled={
+                  !nfcSupported || loadingParticipants || !selectedParticipant
+                }
+                className="rounded-2xl border border-purple-300/20 bg-purple-400/10 px-4 py-3 font-semibold text-purple-100 transition hover:bg-purple-400/15 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
+              >
+                {nfcWriting ? "Bezig..." : "Schrijf naar tag"}
               </button>
 
               <button
