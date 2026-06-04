@@ -511,12 +511,16 @@ function PageUser({ currentUser }: PageUserProps) {
       }
 
       if (kind === "urine") {
+        const trimmedNote = urineNote.trim();
+        if (!trimmedNote) {
+          setMessage("Selecteer een opmerking");
+        }
         await addUrine({
           participant_id: selectedParticipant.id,
           name: selectedParticipant.name,
           last_name: selectedParticipant.last_name,
           amount: Number(urineAmount),
-          note: urineNote.trim() || undefined,
+          note: trimmedNote,
           faeces: urineFaeces,
         });
         setMessage(`Plas toegevoegd voor ${selectedParticipant.name}.`);
@@ -945,7 +949,11 @@ function PageUser({ currentUser }: PageUserProps) {
 
               <button
                 type="submit"
-                disabled={submitting === "urine" || !selectedParticipant}
+                disabled={
+                  submitting === "urine" ||
+                  !selectedParticipant ||
+                  !urineNote.trim()
+                }
                 className="w-full rounded-2xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {submitting === "urine" ? "Bezig..." : "Plas opslaan"}
