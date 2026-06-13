@@ -1,43 +1,57 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
+from typing import Optional
 
 from werkzeug.security import check_password_hash, generate_password_hash
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Table, Text, Column, event
+from sqlalchemy.orm import Mapped, mapped_column, relationship, DeclarativeBase
 
 from extensions import db
 
 
-user_camps = db.Table(
+# --- Association tables ---
+
+user_camps = Table(
     "user_camps",
-    db.Column("user_id", db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True),
-    db.Column("camp_id", db.Integer, db.ForeignKey("camp.id", ondelete="CASCADE"), primary_key=True),
+    db.metadata,
+    Column("user_id", Integer, ForeignKey("user.id", ondelete="CASCADE"), primary_key=True),
+    Column("camp_id", Integer, ForeignKey("camp.id", ondelete="CASCADE"), primary_key=True),
 )
 
-
-participant_camps = db.Table(
+participant_camps = Table(
     "participant_camps",
-    db.Column("participant_id", db.Integer, db.ForeignKey("participant.id", ondelete="CASCADE"), primary_key=True),
-    db.Column("camp_id", db.Integer, db.ForeignKey("camp.id", ondelete="CASCADE"), primary_key=True),
+    db.metadata,
+    Column("participant_id", Integer, ForeignKey("participant.id", ondelete="CASCADE"), primary_key=True),
+    Column("camp_id", Integer, ForeignKey("camp.id", ondelete="CASCADE"), primary_key=True),
 )
 
+
+# --- Models ---
 
 class Camp(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(64), unique=True, nullable=False, index=True)
-    name = db.Column(db.String(255), nullable=True)
-    source_header = db.Column(db.Text, nullable=True)
-    start_date = db.Column(db.Date, nullable=True)
-    end_date = db.Column(db.Date, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    active = db.Column(db.Boolean, default=True)
-    users = db.relationship("User", backref="camp", lazy=True)
-    participants = db.relationship("Participant", backref="camp", lazy=True)
-    member_users = db.relationship(
-        "User",
+    __tablename__ = "camp"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    source_header: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Legacy single-FK relationships (kept for backward compatibility)
+    users: Mapped[list["User"]] = relationship("User", back_populates="camp", lazy="select")
+    participants: Mapped[list["Participant"]] = relationship("Participant", back_populates="camp", lazy="select")
+
+    # Many-to-many relationships
+    member_users: Mapped[list["User"]] = relationship(
         secondary=user_camps,
         back_populates="camps",
         lazy="selectin",
     )
-    member_participants = db.relationship(
-        "Participant",
+    member_participants: Mapped[list["Participant"]] = relationship(
         secondary=participant_camps,
         back_populates="camps",
         lazy="selectin",
@@ -59,19 +73,27 @@ class Camp(db.Model):
 
 
 class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False, index=True)
-    email = db.Column(db.String(120), unique=True, nullable=True, index=True)
-    password_hash = db.Column(db.String(255), nullable=False)
-    token_version = db.Column(db.Integer, nullable=False, default=0)
-    password_change_required = db.Column(db.Boolean, nullable=False, default=False)
+    __tablename__ = "user"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
+    email: Mapped[Optional[str]] = mapped_column(String(120), unique=True, nullable=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    password_change_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # role: 'user' (regular counselor), 'superuser' (camp-level admin), or 'admin' (global admin)
-    role = db.Column(db.String(32), nullable=False, default="user", index=True)
-    camp_id = db.Column(db.Integer, db.ForeignKey("camp.id"), nullable=True, index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    active = db.Column(db.Boolean, default=True)
-    camps = db.relationship(
-        "Camp",
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="user", index=True)
+    camp_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("camp.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Legacy single-FK relationship
+    camp: Mapped[Optional["Camp"]] = relationship("Camp", back_populates="users", foreign_keys=[camp_id])
+
+    # Many-to-many relationship
+    camps: Mapped[list["Camp"]] = relationship(
         secondary=user_camps,
         back_populates="member_users",
         lazy="selectin",
@@ -84,42 +106,51 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def to_dict(self) -> dict:
-        sorted_camps = sorted(self.camps, key=lambda camp: camp.id)
+        sorted_camps = sorted(self.camps, key=lambda c: c.id)
         return {
             "id": self.id,
             "username": self.username,
             "email": self.email,
-            "role": getattr(self, "role", "user"),
-            "password_change_required": getattr(self, "password_change_required", False),
+            "role": self.role,
+            "password_change_required": self.password_change_required,
             "created_at": self.created_at.isoformat(),
             "camp_id": self.camp_id,
-            "camp": self.camp.to_dict() if getattr(self, "camp", None) is not None else None,
-            "camp_ids": [camp.id for camp in sorted_camps],
-            "camps": [camp.to_dict() for camp in sorted_camps],
+            "camp": self.camp.to_dict() if self.camp is not None else None,
+            "camp_ids": [c.id for c in sorted_camps],
+            "camps": [c.to_dict() for c in sorted_camps],
         }
 
     @property
     def is_admin(self) -> bool:
-        return getattr(self, "role", "user") == "admin"
+        return self.role == "admin"
 
     @property
     def is_superuser(self) -> bool:
-        return getattr(self, "role", "user") == "superuser"
-    
+        return self.role == "superuser"
+
 
 class Participant(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String, unique=False, nullable=False, index=True)
-    last_name = db.Column(db.String, unique=False, nullable=False, index=True)
-    birth_date = db.Column(db.Date, nullable=True)
-    phone_1 = db.Column(db.String, unique=False, nullable=False, index=True)
-    phone_2 = db.Column(db.String, unique=False, nullable=True)
-    camp_id = db.Column(db.Integer, db.ForeignKey("camp.id"), nullable=True, index=True)
-    date_added = db.Column(db.DateTime, unique=False, default=lambda: datetime.now(timezone.utc))
-    active = db.Column(db.Boolean, default=True)
-    empty_diaper = db.Column(db.Integer, nullable=False, default=0)
-    note = db.Column(db.Text, nullable=True)
-    camps = db.relationship(
+    __tablename__ = "participant"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, index=True)
+    last_name: Mapped[str] = mapped_column(String, index=True)
+    birth_date: Mapped[Optional[datetime]] = mapped_column(Date, nullable=True)
+    phone_1: Mapped[str] = mapped_column(String, index=True)
+    phone_2: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    camp_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("camp.id"), nullable=True, index=True)
+    date_added: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    empty_diaper: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Legacy single-FK relationship
+    camp: Mapped[Optional["Camp"]] = relationship("Camp", back_populates="participants", foreign_keys=[camp_id])
+
+    # Many-to-many relationship
+    camps: Mapped[list["Camp"]] = relationship(
         "Camp",
         secondary=participant_camps,
         back_populates="member_participants",
@@ -127,41 +158,66 @@ class Participant(db.Model):
     )
 
 
-def default_empty_weight(context):
+def _default_empty_weight(context) -> int:
     participant_id = context.get_current_parameters().get("participant_id")
     if participant_id is None:
         return 0
     participant = db.session.get(Participant, participant_id)
     return participant.empty_diaper if participant and participant.empty_diaper is not None else 0
 
+
 class Water(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
-    meal = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    __tablename__ = "water"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participant.id"), nullable=False, index=True)
+    meal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
 
 class Urine(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
-    amount = db.Column(db.Integer, nullable=False)
-    faeces = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    note = db.Column(db.Text, nullable=True)
+    __tablename__ = "urine"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participant.id"), nullable=False, index=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    faeces: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
 
 class Diaper(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
-    weight = db.Column(db.Integer, nullable=False)
-    empty_weight = db.Column(db.Integer, nullable=False, default=default_empty_weight)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    note = db.Column(db.Text, nullable=True)
+    __tablename__ = "diaper"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participant.id"), nullable=False, index=True)
+    weight: Mapped[int] = mapped_column(Integer, nullable=False)
+    empty_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=_default_empty_weight)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
 
 class Clock(db.Model):
-    id=db.Column(db.Integer, primary_key=True)
-    participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    __tablename__ = "clock"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participant.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
 
 class ClockUse(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    participant_id = db.Column(db.Integer, db.ForeignKey("participant.id"), nullable=False, index=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    __tablename__ = "clockuse"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participant.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

@@ -6,7 +6,8 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from flask import Blueprint, current_app, g, jsonify, request, send_file, url_for
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm.scoping import scoped_session
 
 from extensions import db
 from models import Camp, User, Participant, Water, Urine, Diaper, ClockUse, Clock
@@ -57,8 +58,9 @@ def _current_user_is_camp_scoped() -> bool:
     return bool(_current_camp_ids())
 
 
-def _resolve_camps_from_payload(payload: dict, *, allow_empty: bool = True):
-    raw_camp_ids = payload.get("camp_ids")
+def _resolve_camps_from_payload(session: scoped_session, payload: dict, *, allow_empty: bool = True):
+    raw_camp_ids = payload.get("camp_ids", None)
+
 
     if raw_camp_ids is None and "camp_id" in payload:
         raw_camp_ids = [] if payload.get("camp_id") in (None, "") else [payload.get("camp_id")]
@@ -68,6 +70,8 @@ def _resolve_camps_from_payload(payload: dict, *, allow_empty: bool = True):
     elif isinstance(raw_camp_ids, list):
         selected_ids = []
         for raw_id in raw_camp_ids:
+            if raw_id is None:
+                return None, "camp_ids must contain only integers"
             try:
                 selected_ids.append(int(raw_id))
             except (TypeError, ValueError):
@@ -89,7 +93,13 @@ def _resolve_camps_from_payload(payload: dict, *, allow_empty: bool = True):
             return [], None
         return None, "At least one camp is required."
 
-    camps = Camp.query.filter(Camp.id.in_(selected_ids)).order_by(Camp.id.asc()).all()
+    # camps = Camp.query.filter(Camp.id.in_(selected_ids)).order_by(Camp.id.asc()).all()
+    camps = list(session.scalars(
+        select(Camp)
+        .where(Camp.id.in_(selected_ids))
+        .order_by(Camp.id)
+    ).all())
+    
     if len(camps) != len(selected_ids):
         return None, "One or more camps were not found."
 
@@ -178,7 +188,7 @@ def register():
         return jsonify({"error": "Email already exists."}), 409
 
     # Always create regular users via the public register endpoint
-    camps, camp_error = _resolve_camps_from_payload(payload)
+    camps, camp_error = _resolve_camps_from_payload(db.session, payload)
     if camp_error is not None:
         current_app.logger.warning(f"Register failed: camp error - {camp_error}")
         return jsonify({"error": camp_error}), 400
@@ -186,7 +196,7 @@ def register():
     primary_camp_id = camps[0].id if camps else None
     user = User(username=username, email=email, camp_id=primary_camp_id)
     user.set_password(password)
-    user.camps = camps
+    user.camps = camps if camps else []
     db.session.add(user)
     db.session.commit()
 
@@ -424,7 +434,7 @@ def add_participants():
             current_app.logger.warning(f"Add participant failed: invalid birth_date - {exc}")
             return jsonify({"error": str(exc)}), 400
 
-    camps, camp_error = _resolve_camps_from_payload(payload, allow_empty=False)
+    camps, camp_error = _resolve_camps_from_payload(db.session, payload, allow_empty=False)
     if camp_error is not None:
         current_app.logger.warning(f"Add participant failed: camp error - {camp_error}")
         return jsonify({"error": camp_error}), 400
@@ -439,7 +449,7 @@ def add_participants():
         camp_id=primary_camp_id,
         birth_date=birth_date,
     )
-    new_participant.camps = camps
+    new_participant.camps = camps if camps else []
     db.session.add(new_participant)
     db.session.commit()
     
@@ -478,7 +488,7 @@ def create_user():
         return jsonify({"error": "Only admins can create superuser or admin accounts."}), 403
 
     # Determine camp assignment
-    camps, camp_error = _resolve_camps_from_payload(payload)
+    camps, camp_error = _resolve_camps_from_payload(db.session, payload)
     if camp_error is not None:
         current_app.logger.warning(f"Create user failed: camp error - {camp_error}")
         return jsonify({"error": camp_error}), 400
@@ -486,7 +496,7 @@ def create_user():
     primary_camp_id = camps[0].id if camps else None
     new_user = User(username=username, email=email, camp_id=primary_camp_id, role=role)
     new_user.set_password(password)
-    new_user.camps = camps
+    new_user.camps = camps if camps else []
     db.session.add(new_user)
     db.session.commit()
 
@@ -545,18 +555,19 @@ def update_user(user_id: int):
             current_app.logger.debug(f"User {user_id} username updated to: {username}")
 
     if "camp_ids" in payload or "camp_id" in payload:
-        camps, camp_error = _resolve_camps_from_payload(payload)
+        camps, camp_error = _resolve_camps_from_payload(db.session, payload)
         if camp_error is not None:
             current_app.logger.warning(f"Update user {user_id} failed: camp error - {camp_error}")
             return jsonify({"error": camp_error}), 400
 
-        next_camp_ids = [camp.id for camp in camps]
-        previous_camp_ids = [camp.id for camp in sorted(user.camps, key=lambda camp: camp.id)]
-        if next_camp_ids != previous_camp_ids:
-            user.camps = camps
-            user.camp_id = camps[0].id if camps else None
-            updates_applied = True
-            current_app.logger.debug(f"User {user_id} camps updated to: {next_camp_ids}")
+        if camps:
+            next_camp_ids = [camp.id for camp in camps]
+            previous_camp_ids = [camp.id for camp in sorted(user.camps, key=lambda camp: camp.id)]
+            if next_camp_ids != previous_camp_ids:
+                user.camps = camps
+                user.camp_id = camps[0].id if camps else None
+                updates_applied = True
+                current_app.logger.debug(f"User {user_id} camps updated to: {next_camp_ids}")
 
     if not updates_applied:
         current_app.logger.warning(f"Update user {user_id} failed: no valid updates provided")
@@ -674,9 +685,9 @@ def update_empty_diaper():
         return jsonify({"error": "Participant not found."}), 404
 
     try:
-        empty_diaper = int(payload.get("empty_diaper"))
-    except (TypeError, ValueError):
-        current_app.logger.warning(f"Update empty diaper failed: invalid empty_diaper value")
+        empty_diaper = int(payload["empty_diaper"])
+    except (KeyError, TypeError, ValueError):
+        current_app.logger.warning("Update empty diaper failed: invalid empty_diaper value")
         return jsonify({"error": "empty_diaper must be an integer."}), 400
 
     if empty_diaper < 0:
@@ -718,9 +729,15 @@ def add_water():
 @require_auth
 def add_urine():
     payload = request.get_json(silent=True) or {}
-    amount = int(payload.get("amount"))
-    note = str(payload.get("note", "")).strip() or None
-    faeces = bool(payload.get("faeces"))
+    try:
+        amount = int(payload["amount"])
+        note = str(payload["note"]).strip()
+        faeces = bool(payload["faeces"])
+    except (KeyError, Exception):
+        return jsonify({"error", "incorrect parameters"})
+    
+    if amount < 0:
+        return jsonify({"error": "amount must be greater than or equal to zero"})
 
     participant = resolve_participant(payload, _current_camp_ids())
 
@@ -737,8 +754,14 @@ def add_urine():
 @require_auth
 def add_diaper():
     payload = request.get_json(silent=True) or {}
-    weight = int(payload.get("weight"))
-    note = str(payload.get("note", "")).strip() or None
+    try:
+        weight = int(payload["weight"])
+        note = str(payload.get("note", "")).strip()
+    except (KeyError, Exception):
+        return jsonify({"error", "incorrect parameters"})
+    
+    if weight < 0:
+        return jsonify({"error": "amount must be greater than or equal to zero"})
 
     participant = resolve_participant(payload, _current_camp_ids())
 
@@ -866,16 +889,52 @@ def recent_entries():
     if not scoped_participant_ids:
         return jsonify({"entries": []})
 
-    water_entries = Water.query.filter(Water.participant_id.in_(scoped_participant_ids)).order_by(Water.created_at.desc()).limit(limit).all()
-    urine_entries = Urine.query.filter(Urine.participant_id.in_(scoped_participant_ids)).order_by(Urine.created_at.desc()).limit(limit).all()
-    diaper_entries = Diaper.query.filter(Diaper.participant_id.in_(scoped_participant_ids)).order_by(Diaper.created_at.desc()).limit(limit).all()
-    clock_entries = Clock.query.filter(Clock.participant_id.in_(scoped_participant_ids)).order_by(Clock.created_at.desc()).limit(limit).all()
+    # water_entries = Water.query.filter(Water.participant_id.in_(scoped_participant_ids)).order_by(Water.created_at.desc()).limit(limit).all()
+    water_entries: list[Water] = list(
+        db.session.execute(
+            select(Water)
+            .where(Water.participant_id.in_(scoped_participant_ids))
+            .order_by(Water.created_at.desc())
+            .limit(limit)
+        ).scalars()
+    )
+    # urine_entries = Urine.query.filter(Urine.participant_id.in_(scoped_participant_ids)).order_by(Urine.created_at.desc()).limit(limit).all()
+    urine_entries: list[Urine] = list(
+        db.session.execute(
+            select(Urine)
+            .where(Urine.participant_id.in_(scoped_participant_ids))
+            .order_by(Urine.created_at.desc())
+            .limit(limit)
+        ).scalars()
+    )
+    # diaper_entries = Diaper.query.filter(Diaper.participant_id.in_(scoped_participant_ids)).order_by(Diaper.created_at.desc()).limit(limit).all()
+    diaper_entries: list[Diaper] = list(
+        db.session.execute(
+            select(Diaper)
+            .where(Diaper.participant_id.in_(scoped_participant_ids))
+            .order_by(Diaper.created_at.desc())
+            .limit(limit)
+        ).scalars()
+    )
+    # clock_entries = Clock.query.filter(Clock.participant_id.in_(scoped_participant_ids)).order_by(Clock.created_at.desc()).limit(limit).all()
+    clock_entries: list[Clock] = list(
+        db.session.execute(
+            select(Clock)
+            .where(Clock.participant_id.in_(scoped_participant_ids))
+            .order_by(Clock.created_at.desc())
+            .limit(limit)
+        ).scalars()
+    )
 
     participant_ids = {
         entry.participant_id
         for entry in water_entries + urine_entries + diaper_entries + clock_entries
     }
-    participants = Participant.query.filter(Participant.id.in_(participant_ids)).all() if participant_ids else []
+    participants: list[Participant] = (
+        list(db.session.execute(select(Participant).where(Participant.id.in_(participant_ids))).scalars())
+        if participant_ids
+        else []
+    )
     participant_by_id = {
         participant.id: participant
         for participant in participants
@@ -892,24 +951,23 @@ def recent_entries():
             "id": entry.id,
             "kind": "water",
             "participant_id": entry.participant_id,
-            "participant_name": participant_by_id.get(entry.participant_id).name
-            if participant_by_id.get(entry.participant_id)
-            else "Unknown",
-            "participant_last_name": participant_by_id.get(entry.participant_id).last_name
-            if participant_by_id.get(entry.participant_id)
-            else "",
-            "participant_camp_id": _primary_participant_camp(participant_by_id.get(entry.participant_id)).id
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
-            "participant_camp_code": _primary_participant_camp(participant_by_id.get(entry.participant_id)).code
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
-            "participant_camp_name": _primary_participant_camp(participant_by_id.get(entry.participant_id)).name
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
+            **(
+                {
+                    "participant_name": p.name,
+                    "participant_last_name": p.last_name,
+                    "participant_camp_id": camp.id if (camp := _primary_participant_camp(p)) else None,
+                    "participant_camp_code": camp.code if (camp := _primary_participant_camp(p)) else None,
+                    "participant_camp_name": camp.name if (camp := _primary_participant_camp(p)) else None,
+                }
+                if (p := participant_by_id.get(entry.participant_id)) is not None
+                else {
+                    "participant_name": "Unknown",
+                    "participant_last_name": "",
+                    "participant_camp_id": None,
+                    "participant_camp_code": None,
+                    "participant_camp_name": None,
+                }
+            ),
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "meal": entry.meal,
             "amount": None,
@@ -922,54 +980,52 @@ def recent_entries():
             "id": entry.id,
             "kind": "urine",
             "participant_id": entry.participant_id,
-            "participant_name": participant_by_id.get(entry.participant_id).name
-            if participant_by_id.get(entry.participant_id)
-            else "Unknown",
-            "participant_last_name": participant_by_id.get(entry.participant_id).last_name
-            if participant_by_id.get(entry.participant_id)
-            else "",
-            "participant_camp_id": _primary_participant_camp(participant_by_id.get(entry.participant_id)).id
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
-            "participant_camp_code": _primary_participant_camp(participant_by_id.get(entry.participant_id)).code
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
-            "participant_camp_name": _primary_participant_camp(participant_by_id.get(entry.participant_id)).name
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
+            **(
+                {
+                    "participant_name": p.name,
+                    "participant_last_name": p.last_name,
+                    "participant_camp_id": camp.id if (camp := _primary_participant_camp(p)) else None,
+                    "participant_camp_code": camp.code if (camp := _primary_participant_camp(p)) else None,
+                    "participant_camp_name": camp.name if (camp := _primary_participant_camp(p)) else None,
+                }
+                if (p := participant_by_id.get(entry.participant_id)) is not None
+                else {
+                    "participant_name": "Unknown",
+                    "participant_last_name": "",
+                    "participant_camp_id": None,
+                    "participant_camp_code": None,
+                    "participant_camp_name": None,
+                }
+            ),
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "meal": None,
             "amount": entry.amount,
             "weight": None,
             "note": entry.note,
         }
-        for entry in urine_entries
+        for entry in urine_entries 
     ] + [
         {
             "id": entry.id,
             "kind": "diaper",
             "participant_id": entry.participant_id,
-            "participant_name": participant_by_id.get(entry.participant_id).name
-            if participant_by_id.get(entry.participant_id)
-            else "Unknown",
-            "participant_last_name": participant_by_id.get(entry.participant_id).last_name
-            if participant_by_id.get(entry.participant_id)
-            else "",
-            "participant_camp_id": _primary_participant_camp(participant_by_id.get(entry.participant_id)).id
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
-            "participant_camp_code": _primary_participant_camp(participant_by_id.get(entry.participant_id)).code
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
-            "participant_camp_name": _primary_participant_camp(participant_by_id.get(entry.participant_id)).name
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
+            **(
+                {
+                    "participant_name": p.name,
+                    "participant_last_name": p.last_name,
+                    "participant_camp_id": camp.id if (camp := _primary_participant_camp(p)) else None,
+                    "participant_camp_code": camp.code if (camp := _primary_participant_camp(p)) else None,
+                    "participant_camp_name": camp.name if (camp := _primary_participant_camp(p)) else None,
+                }
+                if (p := participant_by_id.get(entry.participant_id)) is not None
+                else {
+                    "participant_name": "Unknown",
+                    "participant_last_name": "",
+                    "participant_camp_id": None,
+                    "participant_camp_code": None,
+                    "participant_camp_name": None,
+                }
+            ),
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "meal": None,
             "amount": None,
@@ -982,24 +1038,23 @@ def recent_entries():
             "id": entry.id,
             "kind": "clock",
             "participant_id": entry.participant_id,
-            "participant_name": participant_by_id.get(entry.participant_id).name
-            if participant_by_id.get(entry.participant_id)
-            else "Unknown",
-            "participant_last_name": participant_by_id.get(entry.participant_id).last_name
-            if participant_by_id.get(entry.participant_id)
-            else "",
-            "participant_camp_id": _primary_participant_camp(participant_by_id.get(entry.participant_id)).id
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
-            "participant_camp_code": _primary_participant_camp(participant_by_id.get(entry.participant_id)).code
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
-            "participant_camp_name": _primary_participant_camp(participant_by_id.get(entry.participant_id)).name
-            if participant_by_id.get(entry.participant_id)
-            and _primary_participant_camp(participant_by_id.get(entry.participant_id)) is not None
-            else None,
+            **(
+                {
+                    "participant_name": p.name,
+                    "participant_last_name": p.last_name,
+                    "participant_camp_id": camp.id if (camp := _primary_participant_camp(p)) else None,
+                    "participant_camp_code": camp.code if (camp := _primary_participant_camp(p)) else None,
+                    "participant_camp_name": camp.name if (camp := _primary_participant_camp(p)) else None,
+                }
+                if (p := participant_by_id.get(entry.participant_id)) is not None
+                else {
+                    "participant_name": "Unknown",
+                    "participant_last_name": "",
+                    "participant_camp_id": None,
+                    "participant_camp_code": None,
+                    "participant_camp_name": None,
+                }
+            ),
             "created_at": entry.created_at.isoformat() if entry.created_at else None,
             "meal": None,
             "amount": None,
@@ -1041,8 +1096,8 @@ def update_entry(kind: str, entry_id: int):
     if kind == "urine":
         if "amount" in payload:
             try:
-                amount = int(payload.get("amount"))
-            except (TypeError, ValueError):
+                amount = int(payload["amount"])
+            except (TypeError, ValueError, KeyError):
                 return jsonify({"error": "amount must be an integer."}), 400
             if amount < 0:
                 return jsonify({"error": "amount must be zero or greater."}), 400
@@ -1057,8 +1112,8 @@ def update_entry(kind: str, entry_id: int):
     if kind == "diaper":
         if "weight" in payload:
             try:
-                weight = int(payload.get("weight"))
-            except (TypeError, ValueError):
+                weight = int(payload["weight"])
+            except (TypeError, ValueError, KeyError):
                 return jsonify({"error": "weight must be an integer."}), 400
             if weight < 0:
                 return jsonify({"error": "weight must be zero or greater."}), 400
@@ -1126,7 +1181,10 @@ def excel_participants_counselors():
 @require_auth
 def add_clock():
     payload = request.get_json(silent=True) or {}
-    id = int(payload.get("participant_id"))
+    try:
+        id = int(payload["participant_id"])
+    except KeyError:
+        return jsonify({"error": "missing parameter: participant_id"})
 
     participant = db.session.get(Participant, id)
     if not _participant_visible_to_current_user(participant):
@@ -1142,7 +1200,11 @@ def add_clock():
 @require_auth
 def add_clock_use():
     payload = request.get_json(silent=True) or {}
-    id = int(payload.get("participant_id"))
+    try:
+        id = int(payload["participant_id"])
+    except KeyError:
+        return jsonify({"error": "missing parameter: participant_id"})
+
 
     participant = db.session.get(Participant, id)
     if not _participant_visible_to_current_user(participant):
@@ -1154,24 +1216,18 @@ def add_clock_use():
 
     return jsonify({'message' : 'clockUse added', 'participant_id': id})
 
-@api_bp.get("/exceldiary")
+@api_bp.route("/exceldiary")
 # @require_auth
 def get_diary():
-    participant_id = request.get_json(silent=True).get("participant_id") or None
-    if not participant_id:
+    payload = request.get_json(silent=True) or None
+    if payload:
+        participant_id = payload.get("participant_id")
+    else:
         return jsonify({"error": "participant_id is required"}), 400
-    participant = Participant.query.filter(Participant.id==participant_id).first()
-    current_app.logger.debug(f"participant_id: {participant_id}, participant: {participant.name + participant.last_name}")
-    diary = create_diary(participant)
+    participant = Participant.query.filter(Participant.id == participant_id)
+    camp = select(Camp).where(Camp.id == participant.camps[0])
 
-    static_folder = Path(current_app.static_folder).resolve()
-    file_path = Path(diary).resolve()
-
-    # Get the path relative to the static folder
-    relative_path = file_path.relative_to(static_folder)
-
-    # Generate the URL
-    return jsonify({"path": url_for('static', filename=str(relative_path))})
+    return jsonify({"error": "none"})
 
 @api_bp.get("/downloadDiaries")
 @require_auth
