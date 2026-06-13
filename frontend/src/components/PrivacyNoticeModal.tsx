@@ -6,7 +6,7 @@ export default function PrivacyNoticeModal({
   onClose,
 }: PrivacyNoticeModalProps) {
   const contactInfo = {
-    organization: "Persoonlijk beheer",
+    organization: "Sam Vandenabeele",
     email: "sam.vandenabeele.09@gmail.com",
     phone: "+32 465 09 45 56",
     address: "Stationsstraat 113, 9850 Landegem",

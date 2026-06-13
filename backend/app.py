@@ -9,7 +9,7 @@ from routes import api_bp
 
 
 def create_app(config_class=Config):
-    app = Flask(__name__, static_folder=None)
+    app = Flask(__name__, static_folder='static')
     app.config.from_object(config_class)
 
     app.logger.setLevel(os.getenv("DEBUG_LEVEL", "WARNING"))

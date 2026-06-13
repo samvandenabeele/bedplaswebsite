@@ -1,11 +1,11 @@
-
 import logging
 from datetime import datetime, timedelta
+from time import perf_counter
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from flask import Blueprint, current_app, g, jsonify, request, send_file
+from flask import Blueprint, current_app, g, jsonify, request, send_file, url_for
 from sqlalchemy import func, or_
 
 from extensions import db
@@ -1154,9 +1154,30 @@ def add_clock_use():
 
     return jsonify({'message' : 'clockUse added', 'participant_id': id})
 
+@api_bp.get("/exceldiary")
+# @require_auth
+def get_diary():
+    participant_id = request.get_json(silent=True).get("participant_id") or None
+    if not participant_id:
+        return jsonify({"error": "participant_id is required"}), 400
+    participant = Participant.query.filter(Participant.id==participant_id).first()
+    current_app.logger.debug(f"participant_id: {participant_id}, participant: {participant.name + participant.last_name}")
+    diary = create_diary(participant)
+
+    static_folder = Path(current_app.static_folder).resolve()
+    file_path = Path(diary).resolve()
+
+    # Get the path relative to the static folder
+    relative_path = file_path.relative_to(static_folder)
+
+    # Generate the URL
+    return jsonify({"path": url_for('static', filename=str(relative_path))})
+
 @api_bp.get("/downloadDiaries")
 @require_auth
 def download_diaries():
+    time_start = perf_counter()
+    current_app.logger.debug(f"started downloading diaries")
     camp_id = request.args.get("camp_id", type=int)
     current_user = getattr(g, "current_user", None)
 
@@ -1189,13 +1210,20 @@ def download_diaries():
     with ZipFile(export_buffer, mode="w", compression=ZIP_DEFLATED) as archive:
         for participant in participants:
             diary_path = Path(create_diary(participant))
+            time_p = perf_counter() - time_start
+            current_app.logger.debug(f"done creating excel for participant {participant.name + " " + participant.last_name}, took {time_p} seconds")
+
             try:
                 archive.write(diary_path, arcname=diary_path.name)
+                time_p = perf_counter() - time_start
+                current_app.logger.debug(f"added excel for participant {participant.name + " " + participant.last_name} to archive, timestamp: {time_p}")
+
             finally:
                 diary_path.unlink(missing_ok=True)
-
+                
     export_buffer.seek(0)
 
+    current_app.logger.debug(f"done sending diaries, took {perf_counter() - time_start} seconds")
     return send_file(
         export_buffer,
         mimetype="application/zip",

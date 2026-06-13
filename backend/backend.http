@@ -51,3 +51,12 @@ Authorization: Bearer {{token}}
     "last_name": "Vandenabeele",
     "phone_1": "+32465094556"
 }
+
+###
+
+GET {{baseUrl}}/api/exceldiary
+Content-Type: application/json
+
+{
+    "participant_id": 1
+}

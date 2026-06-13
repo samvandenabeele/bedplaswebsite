@@ -25,5 +25,7 @@ dist-ssr
 *.sw?
 
 
-.xlsx
+*.xlsx
 migrations
+*.code-workspace
+react-doctor.yml
