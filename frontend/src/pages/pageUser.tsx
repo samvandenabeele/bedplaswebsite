@@ -15,6 +15,7 @@ import {
   type ParticipantSummary,
 } from "../api";
 import CustomSelect from "../components/CustomSelect";
+import DiaryChart from "../components/charts";
 
 const URINE_NOTE_OPTIONS = [
   "Op toilet",
@@ -1172,9 +1173,9 @@ function PageUser({ currentUser }: PageUserProps) {
             </label>
           </div>
 
-          <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
+          <div className="overflow-x-auto overflow-y-auto max-h-96 rounded-2xl border border-white/10 bg-white/5 scrollbar-thumb-slate-400">
             <table className="min-w-full divide-y divide-white/10 text-sm text-slate-200">
-              <thead className="bg-white/5 text-left text-xs uppercase tracking-wide text-slate-400">
+              <thead className="bg-gray-800 text-left text-xs uppercase tracking-wide text-slate-400 sticky top-0">
                 <tr>
                   <th className="px-4 py-3 font-medium">Tijd</th>
                   <th className="px-4 py-3 font-medium">Type</th>
@@ -1421,6 +1422,11 @@ function PageUser({ currentUser }: PageUserProps) {
             </table>
           </div>
         </div>
+        {selectedParticipant ? (
+          <div className="mt-6 rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-slate-950/20 sm:p-5">
+            <DiaryChart participantId={selectedParticipant.id} />
+          </div>
+        ) : null}
       </div>
     </section>
   );

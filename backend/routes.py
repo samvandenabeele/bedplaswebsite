@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from time import perf_counter
 from io import BytesIO
 from pathlib import Path
@@ -16,6 +16,7 @@ from participant_service import resolve_participant, participant_activity_summar
 from entry_service import entry_model_for_kind
 from excel_import import process_workbook
 from diaries import create_diary
+from statistics import mean
 
 logger = logging.getLogger(__name__)
 
@@ -1216,7 +1217,7 @@ def add_clock_use():
 
     return jsonify({'message' : 'clockUse added', 'participant_id': id})
 
-@api_bp.route("/exceldiary")
+@api_bp.post("/graphData")
 # @require_auth
 def get_diary():
     payload = request.get_json(silent=True) or None
@@ -1225,9 +1226,41 @@ def get_diary():
     else:
         return jsonify({"error": "participant_id is required"}), 400
     participant = Participant.query.filter(Participant.id == participant_id)
-    camp = select(Camp).where(Camp.id == participant.camps[0])
+    participant = db.session.execute(select(Participant).where(Participant.id == participant_id)).scalars().first()
+    camp = db.session.execute(select(Camp).where(Camp.id == participant.camps[0].id)).scalar()
 
-    return jsonify({"error": "none"})
+    if not camp:
+        return jsonify({"data": []})
+
+    urine_entries = db.session.execute(
+        select(Urine).where(Urine.participant_id == participant_id)
+    ).scalars().all()
+
+    water_entries = db.session.execute(
+        select(Water).where(Water.participant_id == participant_id)
+    ).scalars().all()
+
+    dates: list[date] = []
+    d = camp.start_date
+
+    if not d or not camp.end_date or not urine_entries or not water_entries:
+        return jsonify({"error": "no data"})
+    while d <= camp.end_date:
+        dates.append(d)
+        d += timedelta(days=1)
+
+    daily_mvv = []
+    daily_gvv = []
+    daily_water = []
+
+    for d in dates:
+        entries = [e for e in urine_entries if e.created_at.date() == d]
+        daily_mvv.append(max(e.amount for e in entries) if entries else 0)
+        daily_gvv.append(mean(e.amount for e in entries) if entries else 0)
+        entries = [e for e in water_entries if e.created_at.date() == d]
+        daily_water.append(len(entries)*200)
+
+    return jsonify({"mvv": daily_mvv, "gvv": daily_gvv, "water": daily_water})
 
 @api_bp.get("/downloadDiaries")
 @require_auth

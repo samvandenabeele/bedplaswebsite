@@ -536,3 +536,14 @@ export function deleteEntry(kind: EntryKind, id: number) {
     method: "DELETE",
   });
 }
+
+export function getGraphData(participantId: number) {
+  return request<{
+    mvv: number[];
+    gvv: number[];
+    water: number[];
+  }>(`/graphData`, {
+    method: "POST",
+    body: JSON.stringify({ participant_id: participantId }),
+  });
+}
