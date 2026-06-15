@@ -8,7 +8,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ReferenceLine,
   Label,
 } from "recharts";
 
@@ -84,13 +83,34 @@ export default function DiaryChart({
           position="insideLeft"
           textAnchor="middle"
         />
-        <Tooltip />
+        <Label
+          value="waterinname (ml)"
+          angle={90}
+          position="insideRight"
+          textAnchor="middle"
+        />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: "#020618", // your desired background color
+            border: "none",
+            borderRadius: "8px",
+            color: "#ffffff",
+          }}
+        />
         <Legend />
-        <ReferenceLine
+        {/* <ReferenceLine
           yAxisId="vv"
           y={(participantAge + 1) * 30}
           stroke="red"
           strokeDasharray="7 7"
+        /> */}
+        <Line
+          yAxisId="vv"
+          dataKey={() => (participantAge + 1) * 30}
+          stroke="red"
+          strokeDasharray="7 7"
+          name="EBCage"
+          dot={false}
         />
         <Line
           yAxisId="vv"
