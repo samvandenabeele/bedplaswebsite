@@ -8,6 +8,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceLine,
+  Label,
 } from "recharts";
 
 interface GraphData {
@@ -25,13 +27,22 @@ interface ChartPoint {
 
 interface Props {
   participantId: number;
+  participantBirthDate: string;
 }
 
 import { getGraphData } from "../api";
 
-export default function DiaryChart({ participantId }: Props) {
+export default function DiaryChart({
+  participantId,
+  participantBirthDate,
+}: Props) {
   const [data, setData] = useState<ChartPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const participantAge = Math.floor(
+    (new Date().getTime() - new Date(participantBirthDate).getTime()) /
+      (1000 * 60 * 60 * 24 * 365.25),
+  );
 
   useEffect(() => {
     getGraphData(participantId)
@@ -55,12 +66,32 @@ export default function DiaryChart({ participantId }: Props) {
   return (
     <ResponsiveContainer width="100%" height={400}>
       <LineChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" yAxisId="vv" />
+        <CartesianGrid strokeDasharray="3 3" yAxisId="vv" stroke="#807c7c" />
         <XAxis dataKey="day" />
-        <YAxis yAxisId="vv" unit=" ml" />
+        <YAxis
+          yAxisId="vv"
+          unit=" ml"
+          domain={[
+            0,
+            (dataMax: number) =>
+              Math.max(dataMax, (participantAge + 1) * 30) + 100,
+          ]}
+        />
         <YAxis yAxisId="water" orientation="right" unit=" ml" />
+        <Label
+          value="mvv/gvv (ml)"
+          angle={-90}
+          position="insideLeft"
+          textAnchor="middle"
+        />
         <Tooltip />
         <Legend />
+        <ReferenceLine
+          yAxisId="vv"
+          y={(participantAge + 1) * 30}
+          stroke="red"
+          strokeDasharray="7 7"
+        />
         <Line
           yAxisId="vv"
           type="monotone"

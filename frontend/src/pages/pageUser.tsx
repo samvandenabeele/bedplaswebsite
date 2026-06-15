@@ -1173,7 +1173,7 @@ function PageUser({ currentUser }: PageUserProps) {
             </label>
           </div>
 
-          <div className="overflow-x-auto overflow-y-auto max-h-96 rounded-2xl border border-white/10 bg-white/5 scrollbar-thumb-slate-400">
+          <div className="overflow-x-auto overflow-y-auto max-h-96 rounded-2xl border border-white/10 bg-white/5 scrollbar-thumb-slate-400 scrollbar-auto scrollbar-gutter-auto">
             <table className="min-w-full divide-y divide-white/10 text-sm text-slate-200">
               <thead className="bg-gray-800 text-left text-xs uppercase tracking-wide text-slate-400 sticky top-0">
                 <tr>
@@ -1424,7 +1424,10 @@ function PageUser({ currentUser }: PageUserProps) {
         </div>
         {selectedParticipant ? (
           <div className="mt-6 rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-slate-950/20 sm:p-5">
-            <DiaryChart participantId={selectedParticipant.id} />
+            <DiaryChart
+              participantId={selectedParticipant.id}
+              participantBirthDate={selectedParticipant.birth_date}
+            />
           </div>
         ) : null}
       </div>

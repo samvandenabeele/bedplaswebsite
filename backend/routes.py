@@ -1227,6 +1227,9 @@ def get_diary():
         return jsonify({"error": "participant_id is required"}), 400
     participant = Participant.query.filter(Participant.id == participant_id)
     participant = db.session.execute(select(Participant).where(Participant.id == participant_id)).scalars().first()
+    if not participant or not participant.camps[0]:
+        return jsonify({"error": "participant not found or has no known camps"})
+
     camp = db.session.execute(select(Camp).where(Camp.id == participant.camps[0].id)).scalar()
 
     if not camp:
@@ -1255,8 +1258,8 @@ def get_diary():
 
     for d in dates:
         entries = [e for e in urine_entries if e.created_at.date() == d]
-        daily_mvv.append(max(e.amount for e in entries) if entries else 0)
-        daily_gvv.append(mean(e.amount for e in entries) if entries else 0)
+        daily_mvv.append(round(max(e.amount for e in entries) if entries else 0, 2))
+        daily_gvv.append(round(mean(e.amount for e in entries) if entries else 0, 2))
         entries = [e for e in water_entries if e.created_at.date() == d]
         daily_water.append(len(entries)*200)
 

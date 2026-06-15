@@ -33,7 +33,7 @@ export type ParticipantSummary = {
   id: number;
   name: string;
   last_name: string;
-  birth_date?: string | null;
+  birth_date: string;
   phone_1: string;
   phone_2: string | null;
   camp_id: number | null;
