@@ -1423,11 +1423,15 @@ function PageUser({ currentUser }: PageUserProps) {
           </div>
         </div>
         {selectedParticipant ? (
-          <div className="mt-6 rounded-3xl border border-white/10 bg-slate-950/55 p-4 shadow-lg shadow-slate-950/20 sm:p-5">
-            <DiaryChart
-              participantId={selectedParticipant.id}
-              participantBirthDate={selectedParticipant.birth_date}
-            />
+          <div className="mt-6 rounded-3xl border border-white/10 bg-slate-950/55 shadow-lg shadow-slate-950/20">
+            <div className="overflow-x-auto p-4 sm:p-5">
+              <div className="min-w-150">
+                <DiaryChart
+                  participantId={selectedParticipant.id}
+                  participantBirthDate={selectedParticipant.birth_date}
+                />
+              </div>
+            </div>
           </div>
         ) : null}
       </div>

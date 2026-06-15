@@ -136,7 +136,7 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col text-slate-100">
+    <div className="flex min-h-screen flex-col text-slate-100 max-h-screen overflow-y-scroll scrollbar-thumb-slate-400 scrollbar-track-transparent scrollbar-gutter-auto">
       <div className="mx-auto flex flex-1 w-full max-w-7xl flex-col px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
         <header className="mb-4 rounded-[1.75rem] border border-white/10 bg-white/5 p-3 shadow-lg shadow-slate-950/30 backdrop-blur sm:mb-6 sm:p-4 lg:p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
