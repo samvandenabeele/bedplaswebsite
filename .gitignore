@@ -26,6 +26,7 @@ dist-ssr
 
 
 *.xlsx
+!plasdagboek.xlsx
 migrations
 *.code-workspace
 react-doctor.yml
