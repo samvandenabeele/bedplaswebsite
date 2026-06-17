@@ -372,17 +372,17 @@ function PageUser({ currentUser }: PageUserProps) {
       return;
     }
 
-    const NdefWriterConstructor = (
+    const NdefReaderConstructor = (
       window as Window & {
-        NDEFWriter?: new () => {
+        NDEFReader?: new () => {
           write: (options: {
             records: Array<{ recordType: string; data: string }>;
           }) => Promise<void>;
         };
       }
-    ).NDEFWriter;
+    ).NDEFReader;
 
-    if (!NdefWriterConstructor) {
+    if (!NdefReaderConstructor) {
       setError("NFC schrijven is niet beschikbaar in deze browser.");
       return;
     }
@@ -392,10 +392,10 @@ function PageUser({ currentUser }: PageUserProps) {
     setMessage("Houd de NFC-tag tegen het toestel om te schrijven...");
 
     try {
-      const writer = new NdefWriterConstructor();
+      const reader = new NdefReaderConstructor();
       const participantIdText = String(selectedParticipant.id);
 
-      await writer.write({
+      await reader.write({
         records: [
           {
             recordType: "text",
