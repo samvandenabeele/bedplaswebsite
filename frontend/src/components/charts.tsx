@@ -62,7 +62,13 @@ export default function DiaryChart({
   if (error) return <p>{error}</p>;
   if (!data.length) return <p>Loading...</p>;
 
-  return (
+  return error ? (
+    <div
+      className={`mb-5 rounded-2xl border px-4 py-3 text-sm border-rose-400/30 bg-rose-500/10 text-rose-100`}
+    >
+      something went wrong, try again later: {error}
+    </div>
+  ) : (
     <ResponsiveContainer width="100%" height={400}>
       <LineChart data={data}>
         <CartesianGrid strokeDasharray="3 3" yAxisId="vv" stroke="#807c7c" />
