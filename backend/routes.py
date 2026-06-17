@@ -1247,7 +1247,12 @@ def get_diary():
     d = camp.start_date
 
     if not d or not camp.end_date or not urine_entries or not water_entries:
-        return jsonify({"mvv": [0 for _ in range(6)], "gvv": [0 for _ in range(6)]})
+        return jsonify({
+            "mvv": [0 for _ in range(6)],
+            "gvv": [0 for _ in range(6)],
+            "water": [0 for _ in range(6)]
+        })
+    
     while d <= camp.end_date:
         dates.append(d)
         d += timedelta(days=1)
