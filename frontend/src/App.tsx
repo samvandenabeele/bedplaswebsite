@@ -15,8 +15,9 @@ import PageAdmin from "./pages/pageAdmin";
 import PageSuperuser from "./pages/pageSuperuser";
 import PageUser from "./pages/pageUser";
 import Footer from "./components/Footer";
+import { PageData } from "./pages/pageData";
 
-type View = "user" | "superuser" | "admin";
+type View = "user" | "data" | "superuser" | "admin";
 type AuthState =
   | "loading"
   | "anonymous"
@@ -169,6 +170,7 @@ function App() {
                   const availableViews: Array<{ key: View; label: string }> =
                     [];
                   availableViews.push({ key: "user", label: "User" });
+                  availableViews.push({ key: "data", label: "Data" });
                   if (
                     currentUser?.role === "superuser" ||
                     currentUser?.role === "admin"
@@ -219,6 +221,8 @@ function App() {
           <div className="w-full max-w-5xl">
             {activeView === "user" ? (
               <PageUser currentUser={currentUser} />
+            ) : activeView === "data" ? (
+              <PageData currentUser={currentUser} />
             ) : activeView === "superuser" ? (
               <PageSuperuser currentUser={currentUser} />
             ) : (

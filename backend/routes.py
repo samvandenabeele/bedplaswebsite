@@ -866,8 +866,8 @@ def participant_recent_entries(participant_id: int):
 
     merged_entries.sort(key=lambda entry: entry.get("created_at") or "", reverse=True)
 
-    return jsonify({"entries": merged_entries[:limit]})
 
+    return jsonify({"entries": merged_entries[:limit]})
 
 @api_bp.get("/recentEntries")
 @require_auth
@@ -1246,12 +1246,10 @@ def get_diary():
     dates: list[date] = []
     d = camp.start_date
 
-    if not d or not camp.end_date or not urine_entries or not water_entries:
-        return jsonify({
-            "mvv": [0 for _ in range(6)],
-            "gvv": [0 for _ in range(6)],
-            "water": [0 for _ in range(6)]
-        })
+    if not d or not camp.end_date:
+        return jsonify({"error": "Camp start date or end date is not set."}), 400
+    
+
     
     while d <= camp.end_date:
         dates.append(d)
@@ -1263,10 +1261,18 @@ def get_diary():
 
     for d in dates:
         entries = [e for e in urine_entries if e.created_at.date() == d]
-        daily_mvv.append(round(max(e.amount for e in entries) if entries else 0, 2))
-        daily_gvv.append(round(mean(e.amount for e in entries) if entries else 0, 2))
+        if entries:
+            daily_mvv.append(round(max(e.amount for e in entries) if entries else 0, 2))
+            daily_gvv.append(round(mean(e.amount for e in entries) if entries else 0, 2))
+        else:
+            daily_mvv.append(0)
+            daily_gvv.append(0)
+            
         entries = [e for e in water_entries if e.created_at.date() == d]
-        daily_water.append(len(entries)*200)
+        if entries:
+            daily_water.append(len(entries)*200)
+        else:
+            daily_water.append(0)
 
     return jsonify({"mvv": daily_mvv, "gvv": daily_gvv, "water": daily_water})
 

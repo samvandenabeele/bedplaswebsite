@@ -1,5 +1,5 @@
-@baseUrl = http://127.0.0.1:8000
-@token = eyJ1c2VyX2lkIjoxLCJ0b2tlbl92ZXJzaW9uIjowfQ.agn_Ig.egKsFDpyUktVvb_8WDv_ZRM9m7c
+@baseUrl = bedplas.be
+@token = eyJ1c2VyX2lkIjoxLCJ0b2tlbl92ZXJzaW9uIjoyfQ.ajLsHQ.GIun7o5wJQJeWMLZuvPnKyoA_vU
 
 GET {{baseUrl}}/api/health
 
@@ -20,8 +20,8 @@ POST {{baseUrl}}/api/auth/login
 Content-Type: application/json
 
 {
-    "identifier": "demo",
-    "password": "ChangeMe123!"
+    "identifier": "admin",
+    "password": "Stationsstraat113"
 }
 
 ###
@@ -54,7 +54,7 @@ Authorization: Bearer {{token}}
 
 ###
 
-GET {{baseUrl}}/api/exceldiary
+POST {{baseUrl}}/api/graphData
 Content-Type: application/json
 
 {
