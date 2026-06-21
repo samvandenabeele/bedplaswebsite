@@ -27,6 +27,7 @@ interface ChartPoint {
 interface Props {
   participantId: number;
   participantBirthDate: string;
+  refreshKey?: number; // Optional prop to trigger re-render
 }
 
 import { getGraphData } from "../api";
@@ -34,6 +35,7 @@ import { getGraphData } from "../api";
 export default function DiaryChart({
   participantId,
   participantBirthDate,
+  refreshKey,
 }: Props) {
   const [data, setData] = useState<ChartPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +59,7 @@ export default function DiaryChart({
       .catch((err) => {
         setError("Failed to load graph data, " + err.message);
       });
-  }, [participantId]);
+  }, [participantId, refreshKey]);
 
   if (error) return <p>{error}</p>;
   if (!data.length) return <p>Loading...</p>;

@@ -39,6 +39,7 @@ export function PageData({ currentUser }: PageDataProps) {
   const [editingEntryKey, setEditingEntryKey] = useState<string | null>(null);
   const [entryActionKey, setEntryActionKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const selectedParticipant = participants.find(
     (participant) => participant.id === selectedParticipantId,
@@ -114,6 +115,7 @@ export function PageData({ currentUser }: PageDataProps) {
       );
     } finally {
       setEntryActionKey(null);
+      setRefreshKey((current) => current + 1);
     }
   }
 
@@ -286,12 +288,6 @@ export function PageData({ currentUser }: PageDataProps) {
     <section className="flex justify-center">
       <div className="w-full max-w-5xl rounded-4xl border border-white/10 bg-white/8 p-3 shadow-2xl shadow-slate-950/40 backdrop-blur-xl sm:p-6 lg:p-8">
         <div className="mb-6 flex flex-col gap-2">
-          <h2 className="text-xl font-semibold text-white sm:text-2xl">
-            Snel invoeren
-          </h2>
-          <p className="text-sm text-slate-400">
-            Kies eerst het kind, voeg daarna meteen water, plas of luier toe.
-          </p>
           {(currentUser?.camps?.length ?? 0) > 0 ? (
             <div className="pt-1 text-xs text-cyan-200">
               Huidige kampen:{" "}
@@ -326,6 +322,22 @@ export function PageData({ currentUser }: PageDataProps) {
               Vernieuw lijst
             </button>
           </div>
+          {selectedParticipant ? (
+            <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                Vandaag water: {selectedParticipant.drank_today}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                Vandaag plas: {selectedParticipant.peed_today}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                Grootste plas: {selectedParticipant.largest_pee}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                Lege luier: {selectedParticipant.empty_diaper}
+              </span>
+            </div>
+          ) : null}
         </div>
         {error || message ? (
           <div
@@ -625,6 +637,7 @@ export function PageData({ currentUser }: PageDataProps) {
                 <DiaryChart
                   participantId={selectedParticipant.id}
                   participantBirthDate={selectedParticipant.birth_date}
+                  refreshKey={refreshKey}
                 />
               </div>
             </div>
