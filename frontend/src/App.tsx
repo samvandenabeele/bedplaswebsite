@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import {
   clearAuthToken,
@@ -30,6 +30,29 @@ function App() {
 
   const [authError, setAuthError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<View>("user");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function handleOutsideClick(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -139,23 +162,23 @@ function App() {
   return (
     <div className="flex min-h-screen flex-col text-slate-100 max-h-screen overflow-y-scroll scrollbar-thumb-slate-400 scrollbar-track-transparent scrollbar-gutter-auto">
       <div className="mx-auto flex flex-1 w-full max-w-7xl flex-col px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
-        <header className="mb-4 rounded-[1.75rem] border border-white/10 bg-white/5 p-3 shadow-lg shadow-slate-950/30 backdrop-blur sm:mb-6 sm:p-4 lg:p-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
+        <header className="relative z-30 mb-4 rounded-[1.75rem] border border-white/10 bg-white/5 p-3 shadow-lg shadow-slate-950/30 backdrop-blur sm:mb-6 sm:p-4 lg:p-5">
+          <div className="flex flex-row items-center justify-between gap-3">
+            <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
                 Bedplas
                 <span className="ml-2 text-xs font-normal text-slate-400 tracking-normal">
                   v1.4.1
                 </span>
               </h1>
-              <p className="mt-1 text-xs text-slate-400 sm:text-sm">
+              <p className="mt-1 truncate text-xs text-slate-400 sm:text-sm">
                 Signed in as{" "}
                 <span className="font-semibold text-white">
                   {currentUser?.username}
                 </span>
               </p>
               {(currentUser?.camps?.length ?? 0) > 0 ? (
-                <p className="mt-1 text-xs text-cyan-200 sm:text-sm">
+                <p className="mt-1 truncate text-xs text-cyan-200 sm:text-sm">
                   Camps:{" "}
                   {currentUser?.camps
                     .map((camp) => camp.name || camp.code)
@@ -164,46 +187,91 @@ function App() {
               ) : null}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 md:justify-end">
-              <div className="inline-flex gap-1 rounded-2xl border border-white/10 bg-white/5 p-1 shadow-lg shadow-slate-950/30 backdrop-blur">
-                {(() => {
-                  const availableViews: Array<{ key: View; label: string }> =
-                    [];
-                  availableViews.push({ key: "user", label: "User" });
-                  availableViews.push({ key: "data", label: "Data" });
-                  if (
-                    currentUser?.role === "superuser" ||
-                    currentUser?.role === "admin"
-                  ) {
-                    availableViews.push({
-                      key: "superuser",
-                      label: "Superuser",
-                    });
-                  }
-                  if (currentUser?.role === "admin") {
-                    availableViews.push({ key: "admin", label: "Admin" });
-                  }
+            <div className="flex shrink-0 items-center gap-2">
+              <div className="relative" ref={menuRef}>
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((open) => !open)}
+                  aria-haspopup="true"
+                  aria-expanded={menuOpen}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-100 shadow-lg shadow-slate-950/30 backdrop-blur transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    className="h-4 w-4"
+                  >
+                    {menuOpen ? (
+                      <path d="M6 6l12 12M18 6L6 18" />
+                    ) : (
+                      <path d="M4 7h16M4 12h16M4 17h16" />
+                    )}
+                  </svg>
+                  <span>
+                    {(() => {
+                      const labels: Record<View, string> = {
+                        user: "User",
+                        data: "Data",
+                        superuser: "Superuser",
+                        admin: "Admin",
+                      };
+                      return labels[activeView];
+                    })()}
+                  </span>
+                </button>
 
-                  return availableViews.map((view) => {
-                    const isActive = activeView === view.key;
-                    return (
-                      <button
-                        key={view.key}
-                        type="button"
-                        onClick={() => setActiveView(view.key)}
-                        className={`rounded-xl px-3 py-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 sm:px-4 sm:py-2.5 ${
-                          isActive
-                            ? "bg-cyan-400 text-slate-950 shadow-md shadow-cyan-500/20"
-                            : "text-slate-300 hover:bg-white/5 hover:text-white"
-                        }`}
-                      >
-                        <div className="text-sm font-semibold">
-                          {view.label}
-                        </div>
-                      </button>
-                    );
-                  });
-                })()}
+                {menuOpen ? (
+                  <div
+                    role="menu"
+                    className="absolute right-0 z-50 mt-2 w-48 origin-top-right rounded-2xl border border-white/10 bg-slate-900/95 p-1.5 shadow-2xl shadow-slate-950/50 backdrop-blur-xl"
+                  >
+                    {(() => {
+                      const availableViews: Array<{
+                        key: View;
+                        label: string;
+                      }> = [];
+                      availableViews.push({ key: "user", label: "User" });
+                      availableViews.push({ key: "data", label: "Data" });
+                      if (
+                        currentUser?.role === "superuser" ||
+                        currentUser?.role === "admin"
+                      ) {
+                        availableViews.push({
+                          key: "superuser",
+                          label: "Superuser",
+                        });
+                      }
+                      if (currentUser?.role === "admin") {
+                        availableViews.push({ key: "admin", label: "Admin" });
+                      }
+
+                      return availableViews.map((view) => {
+                        const isActive = activeView === view.key;
+                        return (
+                          <button
+                            key={view.key}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setActiveView(view.key);
+                              setMenuOpen(false);
+                            }}
+                            className={`block w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 ${
+                              isActive
+                                ? "bg-cyan-400 text-slate-950 shadow-md shadow-cyan-500/20"
+                                : "text-slate-300 hover:bg-white/5 hover:text-white"
+                            }`}
+                          >
+                            {view.label}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                ) : null}
               </div>
 
               <button

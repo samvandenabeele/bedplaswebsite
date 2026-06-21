@@ -595,12 +595,12 @@ function PageUser({ currentUser }: PageUserProps) {
               />
             </label>
 
-            <div className="flex flex-wrap gap-2 lg:justify-end">
+            <div className="flex w-full gap-2 lg:w-auto lg:flex-wrap lg:justify-end">
               <button
                 type="button"
                 onClick={() => void startNfcScan()}
                 disabled={!nfcSupported || loadingParticipants}
-                className="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-4 py-3 font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
+                className="flex-1 rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-2 lg:px-4 py-3 font-semibold text-cyan-100 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 lg:flex-none"
               >
                 {nfcScanning ? "Stop NFC-scan" : "Scan NFC-tag"}
               </button>
@@ -611,7 +611,7 @@ function PageUser({ currentUser }: PageUserProps) {
                 disabled={
                   !nfcSupported || loadingParticipants || !selectedParticipant
                 }
-                className="rounded-2xl border border-purple-300/20 bg-purple-400/10 px-4 py-3 font-semibold text-purple-100 transition hover:bg-purple-400/15 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
+                className="flex-1 rounded-2xl border border-purple-300/20 bg-purple-400/10 px-2 lg:px-4 py-3 font-semibold text-purple-100 transition hover:bg-purple-400/15 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 lg:flex-none"
               >
                 {nfcWriting ? "Bezig..." : "Schrijf naar tag"}
               </button>
@@ -619,7 +619,7 @@ function PageUser({ currentUser }: PageUserProps) {
               <button
                 type="button"
                 onClick={() => void loadParticipants()}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-slate-100 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 sm:px-5"
+                className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-2 lg:px-4 py-3 font-semibold text-slate-100 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 sm:px-5 lg:flex-none"
               >
                 Vernieuw lijst
               </button>
