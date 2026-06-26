@@ -1,15 +1,15 @@
 import { useState } from "react";
 import PrivacyNoticeModal from "./PrivacyNoticeModal";
 
+const contactInfo = {
+  organization: "Sam Vandenabeele",
+  email: "sam.vandenabeele.09@gmail.com",
+  phone: "+32 465 09 45 56",
+  address: "Stationsstraat 113, 9850 Landegem",
+};
+
 export default function Footer() {
   const [showPrivacyNotice, setShowPrivacyNotice] = useState(false);
-
-  const contactInfo = {
-    organization: "Sam Vandenabeele",
-    email: "sam.vandenabeele.09@gmail.com",
-    phone: "+32 465 09 45 56",
-    address: "Stationsstraat 113, 9850 Landegem",
-  };
 
   const currentYear = new Date().getFullYear();
 

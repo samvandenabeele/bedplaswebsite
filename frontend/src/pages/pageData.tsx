@@ -15,6 +15,60 @@ type PageDataProps = {
   currentUser: AuthUser | null;
 };
 
+function formatEntryTime(timestamp: string | null) {
+  if (!timestamp) {
+    return "-";
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("nl-BE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatEntryType(kind: ParticipantRecentEntry["kind"]) {
+  if (kind === "water") {
+    return "Water";
+  }
+
+  if (kind === "urine") {
+    return "Plas";
+  }
+
+  if (kind === "clock") {
+    return "Plaswekker";
+  }
+
+  return "Luier";
+}
+
+function formatEntryDetails(entry: ParticipantRecentEntry) {
+  if (entry.kind === "water") {
+    return entry.meal ? "Drinkmoment bij maaltijd" : "Drinkmoment";
+  }
+
+  if (entry.kind === "urine") {
+    return `${entry.amount ?? 0} ml`;
+  }
+
+  if (entry.kind === "clock") {
+    return "Plaswekker gebruikt";
+  }
+
+  return `${entry.weight ?? 0} g`;
+}
+
+function rowKeyForEntry(entry: ParticipantRecentEntry) {
+  return `${entry.kind}-${entry.id}`;
+}
+
 export function PageData({ currentUser }: PageDataProps) {
   const [selectedParticipantId, setSelectedParticipantId] = useState<
     number | ""
@@ -155,56 +209,6 @@ export function PageData({ currentUser }: PageDataProps) {
     }
   }
 
-  function formatEntryTime(timestamp: string | null) {
-    if (!timestamp) {
-      return "-";
-    }
-
-    const date = new Date(timestamp);
-    if (Number.isNaN(date.getTime())) {
-      return "-";
-    }
-
-    return new Intl.DateTimeFormat("nl-BE", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  }
-
-  function formatEntryType(kind: ParticipantRecentEntry["kind"]) {
-    if (kind === "water") {
-      return "Water";
-    }
-
-    if (kind === "urine") {
-      return "Plas";
-    }
-
-    if (kind === "clock") {
-      return "Plaswekker";
-    }
-
-    return "Luier";
-  }
-
-  function formatEntryDetails(entry: ParticipantRecentEntry) {
-    if (entry.kind === "water") {
-      return entry.meal ? "Drinkmoment bij maaltijd" : "Drinkmoment";
-    }
-
-    if (entry.kind === "urine") {
-      return `${entry.amount ?? 0} ml`;
-    }
-
-    if (entry.kind === "clock") {
-      return "Plaswekker gebruikt";
-    }
-
-    return `${entry.weight ?? 0} g`;
-  }
-
   async function loadRecentEntries(participantId: number) {
     setLoadingRecentEntries(true);
 
@@ -235,10 +239,6 @@ export function PageData({ currentUser }: PageDataProps) {
     recentEntryTypeFilter === "all"
       ? recentEntries
       : recentEntries.filter((entry) => entry.kind === recentEntryTypeFilter);
-
-  function rowKeyForEntry(entry: ParticipantRecentEntry) {
-    return `${entry.kind}-${entry.id}`;
-  }
 
   async function loadParticipants() {
     setLoadingParticipants(true);

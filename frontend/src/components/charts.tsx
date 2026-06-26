@@ -75,26 +75,11 @@ export default function DiaryChart({
       <LineChart data={data}>
         <CartesianGrid strokeDasharray="3 3" yAxisId="vv" stroke="#807c7c" />
         <XAxis dataKey="day" />
-        <YAxis
-          yAxisId="vv"
-          unit=" ml"
-          domain={[
-            0,
-            (dataMax: number) =>
-              Math.max(dataMax, (participantAge + 1) * 30) + 100,
-          ]}
-        />
-        <YAxis yAxisId="water" orientation="right" unit=" ml" />
+        <YAxis yAxisId="vv" unit=" ml" />
         <Label
-          value="mvv/gvv (ml)"
+          value="volume (ml)"
           angle={-90}
           position="insideLeft"
-          textAnchor="middle"
-        />
-        <Label
-          value="waterinname (ml)"
-          angle={90}
-          position="insideRight"
           textAnchor="middle"
         />
         <Tooltip
@@ -137,7 +122,7 @@ export default function DiaryChart({
           dot={false}
         />
         <Line
-          yAxisId="water"
+          yAxisId="vv"
           type="monotone"
           dataKey="water"
           stroke="#9333ea"

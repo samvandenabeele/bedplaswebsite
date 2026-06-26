@@ -2,16 +2,16 @@ interface PrivacyNoticeModalProps {
   onClose: () => void;
 }
 
+const contactInfo = {
+  organization: "Sam Vandenabeele",
+  email: "sam.vandenabeele.09@gmail.com",
+  phone: "+32 465 09 45 56",
+  address: "Stationsstraat 113, 9850 Landegem",
+};
+
 export default function PrivacyNoticeModal({
   onClose,
 }: PrivacyNoticeModalProps) {
-  const contactInfo = {
-    organization: "Sam Vandenabeele",
-    email: "sam.vandenabeele.09@gmail.com",
-    phone: "+32 465 09 45 56",
-    address: "Stationsstraat 113, 9850 Landegem",
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-white/10 bg-slate-900 p-6 shadow-2xl">
